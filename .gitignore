@@ -1,0 +1,10 @@
+.env
+.venv/
+__pycache__/
+logs/
+node_modules/
+dist/
+build/
+.DS_Store
+_sandbox_test.txt
+_tmp_check.py

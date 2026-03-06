@@ -1,17 +1,17 @@
-# CRISA - Sistema de An谩lisis Comercial y Reposici贸n
+# CRISA - Sistema de Reposici髇 de Sucursales
 
-Sistema para **La Tijera / Grupo CRISA** que conecta con Tango ERP (SQL Server) para gesti贸n de stock, ventas, precios y costos.
+Sistema para **La Tijera / Grupo CRISA** que conecta con Tango ERP (SQL Server) para gesti髇 de stock, ventas, precios y costos.
 
-## Caracter铆sticas
-- Dashboard Streamlit interactivo con sem谩foro de alertas
-- Sincronizaci贸n incremental desde Tango ERP via bridge SQL Server
+## Caracter韘ticas
+- Frontend web en React + Vite
+- API FastAPI
+- Sincronizaci髇 incremental desde Tango ERP v韆 bridge SQL Server
 - Alertas por WhatsApp (Twilio) y Email
-- Distribuci贸n inteligente entre sucursales
-- Gesti贸n de costos de reposici贸n
-- Protecci贸n por contrase帽a
+- Distribuci髇 inteligente entre sucursales
+- Gesti髇 de costos de reposici髇
 
 ## Arquitectura
-- **Frontend**: Streamlit (puerto 5000)
-- **Backend**: FastAPI (puerto 8001)
+- **Frontend**: React (Vite)
+- **Backend**: FastAPI (puerto 5000)
 - **Base de datos**: PostgreSQL
-- **Bridge**: Script Python que corre en PC local conectado a SQL Server
+- **Bridge**: script Python en PC local conectado a SQL Server

@@ -1,3 +1,4 @@
+import os
 import pyodbc
 import pandas as pd
 import requests
@@ -5,6 +6,20 @@ import json
 import time
 from datetime import datetime, time as dt_time, timedelta
 import urllib3
+
+def load_env(path):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                os.environ.setdefault(k.strip(), v.strip())
+    except Exception:
+        pass
+
+load_env(os.path.join(os.path.dirname(__file__), ".env"))
 
 # Deshabilitar warnings de SSL para conexiones corporativas
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -19,21 +34,102 @@ conn_str = (
 )
 
 # ==============================================================
-# URL del API - PRODUCCION
+# URL del API - LOCAL / PRODUCCIÓN
 # ==============================================================
-# Este proyecto: crisa-reposicion.replit.app
-REPL_URL = "https://sales-sync-logic.replit.app"
+# Por defecto apunta al API local. Se puede sobrescribir con SYNC_URL.
+API_URL = os.environ.get("SYNC_URL", "http://localhost:5000")
 
-# URL alternativa para DESARROLLO (descomentar si necesitas):
-# REPL_URL = "https://551f46a0-9017-4b9c-b45c-7fa58ca01f34-00-3437h96u7obki.worf.replit.dev"
+# URL alternativa para DESARROLLO (si necesitás un endpoint remoto):
+# API_URL = "https://tu-api-remota.com"
 
-SYNC_INTERVAL = 300  # 5 minutos entre sincronizaciones
-BATCH_SIZE = 2000    # Lotes pequeños para evitar timeout
+SYNC_INTERVAL = 3600  # 60 minutos entre sincronizaciones
+BATCH_SIZE = 500     # Lotes más chicos para evitar timeouts
 MAX_RETRIES = 3      # Reintentos por lote
 
 SYNC_HORARIO_INICIO = dt_time(6, 0)   # Desde las 6:00
 SYNC_HORARIO_FIN = dt_time(22, 0)     # Hasta las 22:00
 SOLO_FUERA_HORARIO = False  # True = solo sync fuera de horario operativo
+
+def normalizar_unidad(cod):
+    cod = str(cod or "").strip().upper()
+    if cod in ("KG", "KGS", "KGR"):
+        return "Kilo"
+    if cod in ("MT", "MTS", "M"):
+        return "Metro"
+    if cod in ("U", "UN", "UNS", "UNI"):
+        return "Unidad"
+    return "Otro"
+
+def rubro_macro(cod_familia):
+    cod = str(cod_familia or "").strip().upper()
+    if cod.startswith("ME"):
+        return "Mercería"
+    if cod == "BL":
+        return "Blanco"
+    if cod in {"TA", "TI", "TV", "TF", "TM", "TD", "TC", "PV", "82", "84"}:
+        return "Telas"
+    if cod in {"AR", "BO", "CO", "MU", "OT", "MC"}:
+        return "Impulso"
+    return "Otros"
+
+def categoria_unm(unidad, cantidad):
+    try:
+        q = float(cantidad or 0)
+    except Exception:
+        q = 0
+    u = str(unidad or "")
+    if u == "Kilo":
+        if q >= 100: return "GRAN MAYORISTA"
+        if q >= 20: return "MAYORISTA 1"
+        if q >= 10: return "MAYORISTA 2"
+        if q >= 5: return "MAYORISTA 3"
+        return None
+    if u == "Metro":
+        if q >= 250: return "GRAN MAYORISTA"
+        if q >= 200: return "MAYORISTA 1"
+        if q >= 150: return "MAYORISTA 2"
+        if q >= 100: return "MAYORISTA 3"
+        return None
+    if u == "Unidad":
+        if q >= 3000: return "GRAN MAYORISTA"
+        if q >= 200: return "MAYORISTA 1"
+        if q >= 150: return "MAYORISTA 2"
+        if q >= 100: return "MAYORISTA 3"
+        return None
+    return None
+
+def tipo_venta(desc_sucursal, tipo_comp):
+    suc = str(desc_sucursal or "").strip().upper()
+    comp = str(tipo_comp or "").strip().upper()
+    es_mayorista_sucursal = suc in {"LA TIJERA MAYORISTA MENDOZA", "LA TIJERA MAYORISTA SJUAN"}
+    es_mayorista_prefijo = any(comp.startswith(p) for p in ["ARC", "NCX", "XFA"])
+    minorista_comprobantes = {"C20", "C24", "C25", "FAC", "N/C", "NCD2"}
+    if suc == "LA TIJERA MENDOZA":
+        return "Comp. Minorista"
+    if es_mayorista_sucursal:
+        return "Comp. Mayorista"
+    if es_mayorista_prefijo:
+        return "Comp. Mayorista"
+    if comp in minorista_comprobantes:
+        return "Comp. Minorista"
+    return None
+
+def sub_rubro(cod_articulo, descripcion):
+    cod = str(cod_articulo or "").strip().upper()
+    desc = str(descripcion or "").strip().upper()
+    if cod.startswith("PV") and (desc.startswith("MEDIAS") or desc.startswith("SOQUETE")):
+        return "Medias"
+    if cod.startswith("PV") and desc.startswith("REMERA"):
+        return "Remeras"
+    if cod.startswith("TC") and desc.startswith("PACK"):
+        return "Pack de Remeras"
+    if cod.startswith("OT") and (desc.startswith("PAÑO") or desc.startswith("MOPA") or desc.startswith("REJI") or desc.startswith("FRAN")):
+        return "Limpieza"
+    if (cod.startswith("AR") and (desc.startswith("AROM") or desc.startswith("DIFU"))) or (cod.startswith("HS") and desc.startswith("HOMES")):
+        return "Aromatización"
+    if cod.startswith("AR"):
+        return descripcion
+    return "Sin Clasificar"
 
 
 def json_serial(obj):
@@ -56,14 +152,25 @@ def esta_en_horario_sync():
 
 
 def get_sync_info():
-    """Obtener información de sincronización desde Replit"""
+    """Obtener información de sincronización desde el API"""
     try:
-        response = requests.get(f"{REPL_URL}/sync-info", timeout=30, verify=SSL_VERIFY)
+        response = requests.get(f"{API_URL}/sync-info", timeout=30, verify=SSL_VERIFY)
         if response.status_code == 200:
             return response.json()
     except Exception as e:
         print(f"  Aviso: No se pudo obtener sync-info: {e}")
     return {}
+
+def esperar_api(max_intentos=5, espera_seg=5):
+    for _ in range(max_intentos):
+        try:
+            r = requests.get(f"{API_URL}/health", timeout=10, verify=SSL_VERIFY)
+            if r.status_code == 200:
+                return True
+        except Exception:
+            pass
+        time.sleep(espera_seg)
+    return False
 
 
 def enviar_en_lotes(url, nombre, df, batch_size=2000, incremental=True):
@@ -96,7 +203,7 @@ def enviar_en_lotes(url, nombre, df, batch_size=2000, incremental=True):
                     f"{url}/sync",
                     data=json_data,
                     headers={'Content-Type': 'application/json'},
-                    timeout=120,
+                    timeout=300,
                     verify=SSL_VERIFY
                 )
                 
@@ -126,17 +233,20 @@ def enviar_en_lotes(url, nombre, df, batch_size=2000, incremental=True):
 
 def get_data():
     print("=" * 60)
-    print("BRIDGE SQL - Sincronización Incremental Tango -> Replit")
+    print("BRIDGE SQL - Sincronización Incremental Tango -> API")
     print("=" * 60)
     print(f"Servidor: tangoserver")
     print(f"Base de datos: crisa_real1")
-    print(f"URL destino: {REPL_URL}")
+    print(f"URL destino: {API_URL}")
     print(f"Tamaño de lote: {BATCH_SIZE} registros")
     print(f"Modo: EJECUCIÓN ÚNICA (UPSERT)")
     print("=" * 60)
 
     try:
         print(f"\n[{datetime.now()}] Iniciando sincronización...")
+        if not esperar_api():
+            print("  Aviso: API no disponible, se reintentará en el próximo ciclo.")
+            return
         
         # Obtener info de última sincronización
         sync_info = get_sync_info()
@@ -144,13 +254,24 @@ def get_data():
         total_ventas_existentes = sync_info.get("total_ventas", 0)
         total_saldos_existentes = sync_info.get("total_saldos", 0)
         total_precios_existentes = sync_info.get("total_precios", 0)
+        total_costos_existentes = sync_info.get("total_costos", 0)
+        total_articulos_existentes = sync_info.get("total_articulos", 0)
+        ultima_sync_precios = sync_info.get("ultima_sync_precios")
+        ultima_sync_costos = sync_info.get("ultima_sync_costos")
+        ultima_sync_articulos = sync_info.get("ultima_sync_articulos")
         
-        print(f"  Estado actual en Replit:")
+        print(f"  Estado actual en API:")
         print(f"    - Saldos: {total_saldos_existentes}")
         print(f"    - Ventas: {total_ventas_existentes}")
         print(f"    - Precios: {total_precios_existentes}")
+        print(f"    - Costos: {total_costos_existentes}")
+        print(f"    - Articulos: {total_articulos_existentes}")
         if ultima_fecha_ventas:
             print(f"    - Última fecha ventas: {ultima_fecha_ventas}")
+        if ultima_sync_precios:
+            print(f"    - Última sync precios: {ultima_sync_precios}")
+        if ultima_sync_articulos:
+            print(f"    - Última sync artículos: {ultima_sync_articulos}")
         
         # Determinar si es primera sincronización
         es_primera_sync = total_saldos_existentes == 0
@@ -210,8 +331,9 @@ def get_data():
             fecha_desde = (datetime.strptime(ultima_fecha_ventas, "%Y-%m-%d") - timedelta(days=3)).strftime("%d/%m/%Y")
             print(f"\n  [VENTAS] Modo incremental desde {fecha_desde}")
         else:
-            fecha_desde = "01/09/2024"
-            print(f"\n  [VENTAS] Primera sincronización desde {fecha_desde}")
+            # Si no hay histórico, traer solo ventana reciente (no fija 2024)
+            fecha_desde = (datetime.now() - timedelta(days=120)).strftime("%d/%m/%Y")
+            print(f"\n  [VENTAS] Sin histórico: ventana reciente desde {fecha_desde}")
 
         fecha_hasta = datetime.now().strftime("%d/%m/%Y")
 
@@ -224,9 +346,12 @@ def get_data():
                 CTA03.FECHA_MOV AS [Fecha] ,
                 CTA02.NRO_SUCURS AS [Nro. Sucursal] ,
                 SUCURSAL.DESC_SUCURSAL AS [Desc. sucursal] ,
+                CTA02.T_COMP AS [Tipo de comprobante] ,
                 CTA03.Cod_Articu AS [Cod. Articulo] ,
                 CTA_ARTICULO.DESC_CTA_ARTICULO AS [Descripcion] ,
                 CTA_ARTICULO.SINONIMO AS [Sinonimo] ,
+                (CASE CTA_ARTICULO.BASE when '' then CTA_ARTICULO.COD_ARTICULO ELSE CTA_ARTICULO.BASE end) AS [Cod. base / articulo] ,
+                (CASE CTA_ARTICULO.BASE when '' then CTA_ARTICULO.DESC_CTA_ARTICULO ELSE BASE.DESC_CTA_ARTICULO end) AS [Desc. Base / Articulo] ,
                 ISNULL(FAMILIA_ART.COD_AGR,'') AS [Cod. Familia (Articulo)] ,
                 FAMILIA_ART.NOM_AGR AS [Descripcion Familia (Articulo)] ,
                 SUM(CASE CTA03.TCOMP_IN_V WHEN 'CC' THEN(-1) ELSE(1) END * CTA03.CANTIDAD / CASE WHEN CAN_EQUI_V = 0 THEN 1 ELSE CAN_EQUI_V END) AS [Cantidad venta] ,
@@ -258,6 +383,7 @@ def get_data():
                 LEFT JOIN CTA_ARTICULO (NOLOCK) ON CTA03.Cod_Articu = CTA_ARTICULO.COD_ARTICULO
                 LEFT JOIN STA16 ON 1=1
                 LEFT JOIN STA29 FAMILIA_ART (NOLOCK) ON SUBSTRING(CTA_ARTICULO.COD_ARTICULO, 1, LONG_FAM_A) = FAMILIA_ART.COD_AGR
+                LEFT JOIN (SELECT COD_ARTICULO, DESC_CTA_ARTICULO FROM CTA_ARTICULO WHERE USA_ESC = 'B') AS BASE ON (BASE.COD_ARTICULO = CTA_ARTICULO.BASE)
                 LEFT JOIN (SELECT * FROM CTA_MEDIDA) AS MEDIDA_STOCK ON CTA03.ID_MEDIDA_STOCK = MEDIDA_STOCK.ID_CTA_MEDIDA
             WHERE
                 CTA03.Cod_Articu NOT IN ('Art. Ajuste')
@@ -266,11 +392,28 @@ def get_data():
                 AND (CTA03.FECHA_MOV BETWEEN '{fecha_desde}' AND '{fecha_hasta}')
                 AND ((ISNULL(CTA03.RENGL_PADR,0) = 0) OR (ISNULL(CTA03.INSUMO_KIT_SEPARADO,0) = 1))
             GROUP BY
-                CTA03.FECHA_MOV, CTA02.NRO_SUCURS, SUCURSAL.DESC_SUCURSAL, CTA03.Cod_Articu, CTA_ARTICULO.DESC_CTA_ARTICULO, CTA_ARTICULO.SINONIMO, ISNULL(FAMILIA_ART.COD_AGR,''), FAMILIA_ART.NOM_AGR, MEDIDA_STOCK.SIGLA_MEDIDA
+                CTA03.FECHA_MOV, CTA02.NRO_SUCURS, SUCURSAL.DESC_SUCURSAL, CTA02.T_COMP, CTA03.Cod_Articu, CTA_ARTICULO.DESC_CTA_ARTICULO, CTA_ARTICULO.SINONIMO,
+                (CASE CTA_ARTICULO.BASE when '' then CTA_ARTICULO.COD_ARTICULO ELSE CTA_ARTICULO.BASE end),
+                (CASE CTA_ARTICULO.BASE when '' then CTA_ARTICULO.DESC_CTA_ARTICULO ELSE BASE.DESC_CTA_ARTICULO end),
+                ISNULL(FAMILIA_ART.COD_AGR,''), FAMILIA_ART.NOM_AGR, MEDIDA_STOCK.SIGLA_MEDIDA
         """
 
         df_ventas = pd.read_sql(query_ventas, conn)
         print(f"    Obtenidos: {len(df_ventas)} registros")
+
+        if not df_ventas.empty:
+            df_ventas["Unidad Normalizada"] = df_ventas["U.M. stock"].apply(normalizar_unidad)
+            df_ventas["Rubro Macro"] = df_ventas["Cod. Familia (Articulo)"].apply(rubro_macro)
+            df_ventas["Categoria UNM"] = df_ventas.apply(
+                lambda r: categoria_unm(r.get("Unidad Normalizada"), r.get("Cantidad venta")), axis=1
+            )
+            df_ventas["Tipo de Venta"] = df_ventas.apply(
+                lambda r: tipo_venta(r.get("Desc. sucursal"), r.get("Tipo de comprobante") or r.get("Tipo de comprobante", "")),
+                axis=1
+            )
+            df_ventas["Sub Rubro"] = df_ventas.apply(
+                lambda r: sub_rubro(r.get("Cod. Articulo"), r.get("Descripcion")), axis=1
+            )
 
         # ============================================================
         # PRECIOS - Siempre actualizar (UPSERT)
@@ -309,6 +452,13 @@ def get_data():
         """
 
         df_precios = pd.read_sql(query_precios, conn)
+        if ultima_sync_precios and not df_precios.empty:
+            try:
+                df_precios["Fecha de ultima modificacion"] = pd.to_datetime(df_precios["Fecha de ultima modificacion"], errors="coerce")
+                df_precios = df_precios[df_precios["Fecha de ultima modificacion"] >= pd.to_datetime(ultima_sync_precios)]
+                print(f"    Filtrados incrementales: {len(df_precios)} registros")
+            except Exception as e:
+                print(f"    Aviso: no se pudo filtrar incremental de precios: {e}")
         print(f"    Obtenidos: {len(df_precios)} registros")
 
         # ============================================================
@@ -347,39 +497,94 @@ def get_data():
         """
 
         df_costos = pd.read_sql(query_costos, conn)
+        # Costos no tienen fecha de modificación confiable -> se envían completos (UPSERT)
         print(f"    Obtenidos: {len(df_costos)} registros")
+
+        # ============================================================
+        # ARTÍCULOS - Nómina base
+        # ============================================================
+        print(f"\n  [ARTICULOS] Consultando nómina de artículos...")
+        query_articulos = """
+            SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+            SET DATEFORMAT DMY
+            SET DATEFIRST 7
+            SET DEADLOCK_PRIORITY -8;
+            SELECT
+                STA11.COD_ARTICU AS [Cod. Articulo],
+                STA11.DESCRIPCIO AS [Descripcion],
+                STA11.DESC_ADIC AS [Desc. Adicional],
+                STA11.SINONIMO AS [Sinonimo],
+                CASE STA11.BASE WHEN '' THEN STA11.COD_ARTICU ELSE STA11.BASE END AS [Cod. base / articulo],
+                BASE.DESCRIPCIO AS [Desc. Articulo Base],
+                FAMILIA_ART.NOM_AGR AS [Familia],
+                GRUPO_ART.COD_AGR AS [Cod. agrupacion],
+                GRUPO_ART.NOM_AGR AS [Desc. agrupacion],
+                STA11.COD_BARRA AS [Codigo de Barras],
+                STA11.Fecha_Alta AS [Fecha de alta],
+                MEDIDA_STOCK.SIGLA_MEDIDA AS [U.M. stock],
+                CASE STOCK WHEN 0 THEN 'No' ELSE 'Si' END AS [Lleva stock asociado],
+                CASE STA11.LLEVA_DOBLE_UNIDAD_MEDIDA WHEN 0 THEN 'No' ELSE 'Si' END AS [Lleva doble unidad de medida]
+            FROM STA11
+            LEFT JOIN STA16 ON 1=1
+            LEFT JOIN STA29 FAMILIA_ART ON SUBSTRING(STA11.COD_ARTICU, 1, LONG_FAM_A) = FAMILIA_ART.COD_AGR
+            LEFT JOIN STA29 GRUPO_ART ON SUBSTRING(STA11.COD_ARTICU, 0, LONG_FAM_A+LONG_GRU_A+1) = GRUPO_ART.COD_AGR
+            LEFT JOIN (SELECT COD_ARTICU, DESCRIPCIO FROM STA11 WHERE USA_ESC = 'B') AS BASE
+                ON (CASE STA11.BASE WHEN '' THEN STA11.COD_ARTICU ELSE STA11.BASE END) = BASE.COD_ARTICU
+            LEFT JOIN MEDIDA AS MEDIDA_STOCK ON STA11.ID_MEDIDA_STOCK = MEDIDA_STOCK.ID_MEDIDA
+            GROUP BY
+                STA11.COD_ARTICU, STA11.DESCRIPCIO, STA11.DESC_ADIC, STA11.SINONIMO,
+                CASE STA11.BASE WHEN '' THEN STA11.COD_ARTICU ELSE STA11.BASE END,
+                BASE.DESCRIPCIO, FAMILIA_ART.NOM_AGR, GRUPO_ART.COD_AGR, GRUPO_ART.NOM_AGR,
+                STA11.COD_BARRA, STA11.Fecha_Alta, MEDIDA_STOCK.SIGLA_MEDIDA,
+                CASE STOCK WHEN 0 THEN 'No' ELSE 'Si' END,
+                CASE STA11.LLEVA_DOBLE_UNIDAD_MEDIDA WHEN 0 THEN 'No' ELSE 'Si' END
+        """
+        df_articulos = pd.read_sql(query_articulos, conn)
+        if ultima_sync_articulos and not df_articulos.empty:
+            try:
+                df_articulos["Fecha de alta"] = pd.to_datetime(df_articulos["Fecha de alta"], errors="coerce")
+                df_articulos = df_articulos[df_articulos["Fecha de alta"] >= pd.to_datetime(ultima_sync_articulos)]
+                print(f"    Filtrados incrementales: {len(df_articulos)} registros")
+            except Exception as e:
+                print(f"    Aviso: no se pudo filtrar incremental de articulos: {e}")
+        print(f"    Obtenidos: {len(df_articulos)} registros")
 
         conn.close()
 
         # ============================================================
         # ENVIAR EN LOTES
         # ============================================================
-        print(f"\n  Enviando datos a Replit ({REPL_URL})...")
+        print(f"\n  Enviando datos al API ({API_URL})...")
         
         # Saldos
         if len(df_saldo) > 0:
-            ok, n = enviar_en_lotes(REPL_URL, "saldo", df_saldo, BATCH_SIZE)
+            ok, n = enviar_en_lotes(API_URL, "saldo", df_saldo, BATCH_SIZE)
             print(f"    [OK] Saldos sincronizados: {n} registros")
-        
-        # Ventas
-        if len(df_ventas) > 0:
-            ok, n = enviar_en_lotes(REPL_URL, "ventas", df_ventas, BATCH_SIZE)
-            print(f"    [OK] Ventas sincronizadas: {n} registros")
+
+        # Artículos (primero para poblar catálogos)
+        if len(df_articulos) > 0:
+            ok, n = enviar_en_lotes(API_URL, "articulos", df_articulos, BATCH_SIZE)
+            print(f"    [OK] Artículos sincronizados: {n} registros")
         
         # Precios
         if len(df_precios) > 0:
-            ok, n = enviar_en_lotes(REPL_URL, "precios", df_precios, BATCH_SIZE)
+            ok, n = enviar_en_lotes(API_URL, "precios", df_precios, BATCH_SIZE)
             print(f"    [OK] Precios sincronizados: {n} registros")
         
         # Costos
         if len(df_costos) > 0:
-            ok, n = enviar_en_lotes(REPL_URL, "costos", df_costos, BATCH_SIZE)
+            ok, n = enviar_en_lotes(API_URL, "costos", df_costos, BATCH_SIZE)
             print(f"    [OK] Costos sincronizados: {n} registros")
+        
+        # Ventas (al final por volumen)
+        if len(df_ventas) > 0:
+            ok, n = enviar_en_lotes(API_URL, "ventas", df_ventas, BATCH_SIZE)
+            print(f"    [OK] Ventas sincronizadas: {n} registros")
         
         # Recalcular métricas
         print(f"\n  Recalculando métricas...")
         try:
-            response = requests.post(f"{REPL_URL}/recalcular-metricas", timeout=120, verify=SSL_VERIFY)
+            response = requests.post(f"{API_URL}/recalcular-metricas", timeout=120, verify=SSL_VERIFY)
             if response.status_code == 200:
                 print(f"    [OK] Métricas recalculadas")
             else:
@@ -387,12 +592,34 @@ def get_data():
         except Exception as e:
             print(f"    [AVISO] No se pudieron recalcular métricas: {e}")
 
+        # Diagnóstico de calidad de datos post-sync
+        try:
+            q = requests.get(f"{API_URL}/quality", timeout=30, verify=SSL_VERIFY)
+            if q.status_code == 200:
+                quality = q.json()
+                faltantes = quality.get("datasets_faltantes", [])
+                print("  Calidad de datos:")
+                print(f"    - Articulos: {quality.get('articulos', 0)}")
+                print(f"    - Saldos: {quality.get('saldo', 0)}")
+                print(f"    - Saldos historial: {quality.get('saldo_historial', 0)}")
+                print(f"    - Ventas: {quality.get('ventas', 0)}")
+                print(f"    - Métricas: {quality.get('metricas', 0)}")
+                print(f"    - Precios: {quality.get('precios', 0)}")
+                print(f"    - Costos: {quality.get('costos', 0)}")
+                print(f"    - Categorias: {quality.get('categorias', 0)}")
+                if faltantes:
+                    print(f"    [AVISO] Datasets faltantes: {', '.join(faltantes)}")
+                else:
+                    print("    [OK] Cobertura completa")
+        except Exception as e:
+            print(f"    [AVISO] No se pudo consultar calidad post-sync: {e}")
+
         print(f"\n[{datetime.now()}] Sincronización completada exitosamente")
 
     except pyodbc.Error as db_error:
         print(f"[{datetime.now()}] Error de base de datos: {db_error}")
     except requests.exceptions.RequestException as req_error:
-        print(f"[{datetime.now()}] Error de conexión a Replit: {req_error}")
+        print(f"[{datetime.now()}] Error de conexión al API: {req_error}")
     except Exception as e:
         print(f"[{datetime.now()}] Error general: {e}")
         import traceback
@@ -400,4 +627,13 @@ def get_data():
 
 
 if __name__ == "__main__":
-    get_data()
+    while True:
+        try:
+            if esta_en_horario_sync():
+                get_data()
+            else:
+                print(f"[{datetime.now()}] Fuera de horario de sync. Esperando...")
+        except Exception as e:
+            print(f"[{datetime.now()}] Error en ciclo principal: {e}")
+        time.sleep(SYNC_INTERVAL)
+

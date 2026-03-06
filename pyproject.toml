@@ -1,7 +1,7 @@
 [project]
-name = "repl-nix-workspace"
+name = "reposicion-crisa"
 version = "0.1.0"
-description = "Add your description here"
+description = "API y frontend para reposición de sucursales"
 requires-python = ">=3.11"
 dependencies = [
     "aiohttp>=3.13.3",
@@ -15,8 +15,8 @@ dependencies = [
     "psycopg2-binary>=2.9.11",
     "pydantic>=2.12.5",
     "pyodbc>=5.3.0",
+    "python-dotenv>=1.0.1",
     "requests>=2.32.5",
-    "streamlit>=1.53.1",
     "twilio>=9.10.0",
     "urllib3>=2.6.3",
     "uvicorn>=0.40.0",

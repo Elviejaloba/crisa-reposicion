@@ -16,6 +16,7 @@ SMTP_SERVER = "smtp.textilcrisa.com"
 SMTP_PORT = 26
 SMTP_USER = "reportes@textilcrisa.com"
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+PUBLIC_APP_URL = os.environ.get("PUBLIC_APP_URL", "http://localhost:5173")
 
 # Colores corporativos
 COLORS = {
@@ -222,7 +223,7 @@ def generar_html_resumen_general(dias=30):
                             <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center">
                                 <tr>
                                     <td style="background-color:{COLORS['primary']};padding:12px 30px;">
-                                        <a href="https://crisa-reposicion.replit.app" style="color:#ffffff;font-family:Arial,sans-serif;font-size:14px;text-decoration:none;font-weight:bold;">
+                                        <a href="{PUBLIC_APP_URL}" style="color:#ffffff;font-family:Arial,sans-serif;font-size:14px;text-decoration:none;font-weight:bold;">
                                             Ver Dashboard Completo
                                         </a>
                                     </td>
@@ -381,7 +382,7 @@ def generar_html_alerta_sucursal(sucursal, dias=30):
                             <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center">
                                 <tr>
                                     <td style="background-color:{COLORS['red']};padding:12px 30px;">
-                                        <a href="https://crisa-reposicion.replit.app" style="color:#ffffff;font-family:Arial,sans-serif;font-size:14px;text-decoration:none;font-weight:bold;">
+                                        <a href="{PUBLIC_APP_URL}" style="color:#ffffff;font-family:Arial,sans-serif;font-size:14px;text-decoration:none;font-weight:bold;">
                                             Ver Detalle en Dashboard
                                         </a>
                                     </td>
@@ -580,7 +581,7 @@ def generar_html_resumen_comercial(dias=30):
                             <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center">
                                 <tr>
                                     <td style="background-color:{COLORS['primary']};padding:12px 30px;">
-                                        <a href="https://crisa-reposicion.replit.app" style="color:#ffffff;font-family:Arial,sans-serif;font-size:14px;text-decoration:none;font-weight:bold;">
+                                        <a href="{PUBLIC_APP_URL}" style="color:#ffffff;font-family:Arial,sans-serif;font-size:14px;text-decoration:none;font-weight:bold;">
                                             Ver Dashboard en Tiempo Real
                                         </a>
                                     </td>
@@ -620,7 +621,7 @@ def enviar_email(destinatario, asunto, html_content):
         msg.attach(msg_alternative)
         
         # Texto plano
-        texto_plano = "Este correo requiere un cliente que soporte HTML. Visite https://crisa-reposicion.replit.app"
+        texto_plano = "Este correo requiere un cliente que soporte HTML. Visite {PUBLIC_APP_URL}"
         part1 = MIMEText(texto_plano, 'plain', 'utf-8')
         part2 = MIMEText(html_content, 'html', 'utf-8')
         
@@ -673,3 +674,4 @@ if __name__ == "__main__":
     print("Modulo de Alertas por Email - Compatible Outlook 2007+")
     print(f"SMTP: {SMTP_SERVER}:{SMTP_PORT}")
     print(f"Usuario: {SMTP_USER}")
+

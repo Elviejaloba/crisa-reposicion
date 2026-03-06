@@ -3,57 +3,48 @@ CRISA: Sistema de Alertas de Stock por WhatsApp
 Envía notificaciones automáticas usando la API de Twilio
 """
 import os
-import requests
 from datetime import datetime
 from twilio.rest import Client
 
+PUBLIC_APP_URL = os.environ.get("PUBLIC_APP_URL", "http://localhost:5173")
+
 def get_twilio_credentials():
-    """Obtener credenciales de Twilio desde Replit Connectors"""
-    hostname = os.environ.get('REPLIT_CONNECTORS_HOSTNAME')
-    
-    x_replit_token = None
-    repl_identity = os.environ.get('REPL_IDENTITY', '')
-    web_repl_renewal = os.environ.get('WEB_REPL_RENEWAL', '')
-    if repl_identity:
-        x_replit_token = 'repl ' + repl_identity
-    elif web_repl_renewal:
-        x_replit_token = 'depl ' + web_repl_renewal
-    
-    if not x_replit_token:
-        raise Exception('Token de Replit no encontrado')
-    
-    response = requests.get(
-        f'https://{hostname}/api/v2/connection?include_secrets=true&connector_names=twilio',
-        headers={
-            'Accept': 'application/json',
-            'X_REPLIT_TOKEN': x_replit_token
+    """Obtener credenciales de Twilio desde variables de entorno"""
+    account_sid = os.environ.get('TWILIO_ACCOUNT_SID')
+    api_key = os.environ.get('TWILIO_API_KEY')
+    api_key_secret = os.environ.get('TWILIO_API_KEY_SECRET')
+    auth_token = os.environ.get('TWILIO_AUTH_TOKEN')
+    phone_number = os.environ.get('TWILIO_WHATSAPP_FROM')
+
+    if account_sid and api_key and api_key_secret:
+        return {
+            'account_sid': account_sid,
+            'api_key': api_key,
+            'api_key_secret': api_key_secret,
+            'auth_token': None,
+            'phone_number': phone_number
         }
-    )
-    
-    data = response.json()
-    connection = data.get('items', [{}])[0]
-    settings = connection.get('settings', {})
-    
-    if not settings.get('account_sid') or not settings.get('api_key') or not settings.get('api_key_secret'):
-        raise Exception('Twilio no está configurado correctamente')
-    
-    return {
-        'account_sid': settings.get('account_sid'),
-        'api_key': settings.get('api_key'),
-        'api_key_secret': settings.get('api_key_secret'),
-        'phone_number': settings.get('phone_number')
-    }
+    if account_sid and auth_token:
+        return {
+            'account_sid': account_sid,
+            'api_key': None,
+            'api_key_secret': None,
+            'auth_token': auth_token,
+            'phone_number': phone_number
+        }
+    raise Exception('Twilio no est� configurado. Defin� TWILIO_ACCOUNT_SID y TWILIO_AUTH_TOKEN (o API key/secret).')
 
 def get_twilio_client():
     """Crear cliente de Twilio autenticado"""
     creds = get_twilio_credentials()
-    return Client(creds['api_key'], creds['api_key_secret'], creds['account_sid'])
+    if creds.get('api_key') and creds.get('api_key_secret'):
+        return Client(creds['api_key'], creds['api_key_secret'], creds['account_sid'])
+    return Client(creds['account_sid'], creds['auth_token'])
 
 def get_twilio_from_number():
-    """Obtener número de origen de Twilio"""
+    """Obtener n�mero de origen de Twilio"""
     creds = get_twilio_credentials()
     return creds['phone_number']
-
 DATOS_SUCURSALES = [
     {
         "sucursal": "MENDOZA",
@@ -133,7 +124,7 @@ _Generado: {fecha}_
 🔴 Sucursales en alerta roja: *{sucursales_rojas}*
 
 👉 Ver dashboard completo:
-https://crisa-reposicion.replit.app
+{PUBLIC_APP_URL}
 """
     
     return mensaje
@@ -159,7 +150,7 @@ _Fecha: {fecha}_
 Se requiere atención inmediata para evitar quiebre de stock.
 
 *📱 Revisar detalles:*
-https://crisa-reposicion.replit.app
+{PUBLIC_APP_URL}
 
 _Por favor, coordine con el Centro de Distribución lo antes posible._
 """
@@ -211,7 +202,7 @@ _Reporte: {fecha}_
 2. Sucursales en amarillo: 🟡 {format_currency(valor_amarillas)}
 
 👉 Dashboard en tiempo real:
-https://crisa-reposicion.replit.app
+{PUBLIC_APP_URL}
 """
     
     return mensaje
@@ -347,3 +338,8 @@ if __name__ == "__main__":
     print("\n💼 PLANTILLA C - Resumen Comercial:")
     print("-" * 40)
     print(generar_mensaje_comercial())
+
+
+
+
+

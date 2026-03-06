@@ -1,13 +1,9 @@
 import os
-import sys
-import subprocess
-import asyncio
 import logging
-import httpx
-import aiohttp
 
-from fastapi import FastAPI, Request, WebSocket
-from fastapi.responses import HTMLResponse, Response
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 import pandas as pd
@@ -15,157 +11,33 @@ from datetime import datetime
 import database as db
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("proxy")
+logger = logging.getLogger("api")
 
-STREAMLIT_PORT = 8002
-streamlit_process = None
-streamlit_log = []
-streamlit_ready = False
-
+# Asegurar estructura de base al iniciar servicio API
+try:
+    db.init_database()
+except Exception as e:
+    logger.warning(f"No se pudo inicializar estructura de base: {e}")
 app = FastAPI(title="Sistema de Análisis Comercial")
-
-@app.on_event("startup")
-async def start_streamlit():
-    global streamlit_process, streamlit_ready
-    streamlit_process = subprocess.Popen(
-        [
-            sys.executable, "-m", "streamlit", "run", "app.py",
-            "--server.port", str(STREAMLIT_PORT),
-            "--server.address", "127.0.0.1",
-            "--server.headless", "true",
-            "--server.enableCORS", "false",
-            "--server.enableXsrfProtection", "false",
-            "--server.enableWebsocketCompression", "false",
-        ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-    )
-
-    async def read_streamlit_output():
-        import io
-        loop = asyncio.get_event_loop()
-        while streamlit_process and streamlit_process.poll() is None:
-            line = await loop.run_in_executor(None, streamlit_process.stdout.readline)
-            if line:
-                decoded = line.decode("utf-8", errors="replace").rstrip()
-                streamlit_log.append(decoded)
-                if len(streamlit_log) > 200:
-                    streamlit_log.pop(0)
-                logger.info(f"[streamlit] {decoded}")
-
-    asyncio.create_task(read_streamlit_output())
-
-    for i in range(60):
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(f"http://127.0.0.1:{STREAMLIT_PORT}/_stcore/health")
-                if resp.status_code == 200:
-                    streamlit_ready = True
-                    logger.info(f"Streamlit ready after {i+1}s")
-                    break
-        except Exception:
-            pass
-        await asyncio.sleep(1)
-
-@app.on_event("shutdown")
-async def stop_streamlit():
-    global streamlit_process
-    if streamlit_process:
-        streamlit_process.terminate()
-
-@app.get("/debug")
-async def debug_info():
-    import socket
-    port_check = False
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(2)
-        s.connect(("127.0.0.1", STREAMLIT_PORT))
-        s.close()
-        port_check = True
-    except Exception:
-        pass
-
-    ws_check = "unknown"
-    try:
-        async with aiohttp.ClientSession() as session:
-            ws = await session.ws_connect(
-                f"http://127.0.0.1:{STREAMLIT_PORT}/_stcore/stream",
-                timeout=5,
-            )
-            ws_check = "connected"
-            await ws.close()
-    except Exception as e:
-        ws_check = f"failed: {e}"
-
-    health_check = "unknown"
-    try:
-        async with httpx.AsyncClient() as client:
-            r = await client.get(f"http://127.0.0.1:{STREAMLIT_PORT}/_stcore/health")
-            health_check = f"{r.status_code}: {r.text}"
-    except Exception as e:
-        health_check = f"failed: {e}"
-
-    return {
-        "streamlit_pid": streamlit_process.pid if streamlit_process else None,
-        "streamlit_running": streamlit_process.poll() is None if streamlit_process else False,
-        "streamlit_returncode": streamlit_process.poll() if streamlit_process else None,
-        "streamlit_ready": streamlit_ready,
-        "port_open": port_check,
-        "health_check": health_check,
-        "ws_check": ws_check,
-        "last_logs": streamlit_log[-30:],
-    }
-
-@app.get("/wstest")
-async def wstest():
-    html = """<!DOCTYPE html><html><head><title>WS Test</title></head><body style="background:#111;color:#0f0;font-family:monospace;padding:20px;">
-<h2>WebSocket Diagnostic</h2><div id="log"></div>
-<script>
-function log(msg){document.getElementById('log').innerHTML+='<p>'+new Date().toISOString()+' - '+msg+'</p>';}
-log('Page loaded, testing WebSocket...');
-var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-var url = proto + '//' + location.host + '/wsecho';
-log('Connecting to: ' + url);
-var ws = new WebSocket(url);
-ws.onopen = function(){log('<b style="color:lime">CONNECTED!</b>'); ws.send('hello');};
-ws.onmessage = function(e){log('Message received: ' + e.data);};
-ws.onclose = function(e){log('<b style="color:red">CLOSED</b> code=' + e.code + ' reason=' + e.reason + ' wasClean=' + e.wasClean);};
-ws.onerror = function(e){log('<b style="color:red">ERROR</b>');};
-setTimeout(function(){
-    log('Testing Streamlit WS path...');
-    var url2 = proto + '//' + location.host + '/_stcore/stream';
-    log('Connecting to: ' + url2);
-    var ws2 = new WebSocket(url2);
-    ws2.onopen = function(){log('<b style="color:lime">STREAMLIT WS CONNECTED!</b>');};
-    ws2.onclose = function(e){log('<b style="color:red">STREAMLIT WS CLOSED</b> code=' + e.code + ' reason=' + e.reason);};
-    ws2.onerror = function(e){log('<b style="color:red">STREAMLIT WS ERROR</b>');};
-}, 2000);
-</script></body></html>"""
-    return HTMLResponse(content=html)
-
-@app.websocket("/wsecho")
-async def wsecho(ws: WebSocket):
-    await ws.accept()
-    logger.info("WSECHO: client connected")
-    try:
-        while True:
-            data = await ws.receive_text()
-            logger.info(f"WSECHO: received {data}")
-            await ws.send_text(f"echo: {data}")
-    except Exception as e:
-        logger.info(f"WSECHO: closed {e}")
-
-API_PATHS = {"/sync", "/health", "/data", "/sucursales", "/alertas", 
-             "/totales", "/precios", "/listas-precios", "/costos",
-             "/metricas-costos", "/resumen-costos",
-             "/whatsapp/enviar", "/whatsapp/alertas-rojas"}
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5000",
+        "http://127.0.0.1:5000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class SyncData(BaseModel):
     saldo: Optional[List[dict]] = None
     ventas: Optional[List[dict]] = None
     precios: Optional[List[dict]] = None
     costos: Optional[List[dict]] = None
+    articulos: Optional[List[dict]] = None
     append: Optional[bool] = False
     reset: Optional[bool] = False
     calculate_metrics: Optional[bool] = False
@@ -178,11 +50,17 @@ def normalize_saldo_columns(records: List[dict]) -> List[dict]:
         # Buscar cod_articulo en múltiples formatos posibles
         cod_art = r.get("Cod. Articulo", r.get("Cód. Artículo", r.get("Cod. base / articulo", 
                   r.get("Cód. base / artículo", r.get("cod_articulo", "")))))
+        cod_base = r.get("Cod. base / articulo", r.get("Cód. base / artículo", r.get("cod_base", "")))
+        desc_base = r.get("Desc. Base / Articulo", r.get("Desc. Base / Artículo", r.get("desc_base", "")))
+        sinonimo = r.get("Sinonimo", r.get("Sinónimo", r.get("sinonimo", "")))
         cod_dep = r.get("Cod. Deposito", r.get("Cód. Depósito", r.get("cod_deposito", "")))
         normalized.append({
             "cod_articulo": str(cod_art) if cod_art else "",
             "descripcion": str(r.get("Articulo", r.get("Artículo", r.get("Desc. Base / Articulo", 
                            r.get("Desc. Base / Artículo", r.get("descripcion", "")))))),
+            "sinonimo": str(sinonimo) if sinonimo else "",
+            "cod_base": str(cod_base) if cod_base else "",
+            "desc_base": str(desc_base) if desc_base else "",
             "sucursal": str(r.get("Sucursal", r.get("sucursal", ""))),
             "nro_sucursal": r.get("Nro. Sucursal", r.get("nro_sucursal", 0)),
             "deposito": str(r.get("Deposito", r.get("Depósito", r.get("deposito", "")))),
@@ -201,9 +79,15 @@ def normalize_ventas_columns(records: List[dict]) -> List[dict]:
         imp_val = r.get("Imp. prop. c/IVA", r.get("importe", 0))
         # Buscar cod_articulo en múltiples formatos
         cod_art = r.get("Cod. Articulo", r.get("Cód. Artículo", r.get("cod_articulo", "")))
+        cod_base = r.get("Cod. base / articulo", r.get("Cód. base / artículo", r.get("cod_base", "")))
+        desc_base = r.get("Desc. Base / Articulo", r.get("Desc. Base / Artículo", r.get("desc_base", "")))
+        sinonimo = r.get("Sinonimo", r.get("Sinónimo", r.get("sinonimo", "")))
         normalized.append({
             "cod_articulo": str(cod_art) if cod_art else "",
             "descripcion": str(r.get("Descripcion", r.get("Descripción", r.get("descripcion", "")))),
+            "sinonimo": str(sinonimo) if sinonimo else "",
+            "cod_base": str(cod_base) if cod_base else "",
+            "desc_base": str(desc_base) if desc_base else "",
             "sucursal": str(r.get("Desc. sucursal", r.get("sucursal", ""))),
             "nro_sucursal": r.get("Nro. Sucursal", r.get("nro_sucursal", 0)),
             "fecha": str(r.get("Fecha", r.get("fecha", ""))),
@@ -211,7 +95,12 @@ def normalize_ventas_columns(records: List[dict]) -> List[dict]:
             "importe": float(imp_val) if imp_val is not None else 0.0,
             "familia": str(r.get("Cod. Familia (Articulo)", r.get("Cód. Familia (Artículo)", r.get("familia", "")))),
             "desc_familia": str(r.get("Descripcion Familia (Articulo)", r.get("Descripción Familia (Artículo)", r.get("desc_familia", "")))),
-            "um_stock": str(r.get("U.M. stock", r.get("um_stock", "")))
+            "um_stock": str(r.get("U.M. stock", r.get("um_stock", ""))),
+            "unidad_normalizada": str(r.get("Unidad Normalizada", r.get("unidad_normalizada", ""))),
+            "rubro_macro": str(r.get("Rubro Macro", r.get("rubro_macro", ""))),
+            "categoria_unm": str(r.get("Categoria UNM", r.get("categoria_unm", ""))),
+            "tipo_venta": str(r.get("Tipo de Venta", r.get("tipo_venta", ""))),
+            "sub_rubro": str(r.get("Sub Rubro", r.get("sub_rubro", "")))
         })
     return normalized
 
@@ -247,6 +136,27 @@ def normalize_costos_columns(records: List[dict]) -> List[dict]:
         })
     return normalized
 
+def normalize_articulos_columns(records: List[dict]) -> List[dict]:
+    normalized = []
+    for r in records:
+        normalized.append({
+            "cod_articulo": str(r.get("Cod. Articulo", r.get("Cód. Artículo", r.get("cod_articulo", "")))),
+            "descripcion": str(r.get("Descripcion", r.get("Descripción", r.get("descripcion", "")))),
+            "desc_adicional": str(r.get("Desc. Adicional", r.get("desc_adicional", ""))),
+            "sinonimo": str(r.get("Sinonimo", r.get("Sinónimo", r.get("sinonimo", "")))),
+            "cod_base": str(r.get("Cod. base / articulo", r.get("Cód. base / artículo", r.get("cod_base", "")))),
+            "desc_base": str(r.get("Desc. Articulo Base", r.get("Desc. Artículo Base", r.get("desc_base", "")))),
+            "familia": str(r.get("Familia", r.get("familia", ""))),
+            "cod_agrupacion": str(r.get("Cod. agrupacion", r.get("Cód. agrupación", r.get("cod_agrupacion", "")))),
+            "desc_agrupacion": str(r.get("Desc. agrupacion", r.get("Desc. agrupación", r.get("desc_agrupacion", "")))),
+            "codigo_barra": str(r.get("Codigo de Barras", r.get("Código de Barras", r.get("codigo_barra", "")))),
+            "fecha_alta": r.get("Fecha de alta", r.get("fecha_alta")),
+            "um_stock": str(r.get("U.M. stock", r.get("um_stock", ""))),
+            "lleva_stock": str(r.get("Lleva stock asociado", r.get("lleva_stock", ""))),
+            "doble_um": str(r.get("Lleva doble unidad de medida", r.get("doble_um", ""))),
+        })
+    return normalized
+
 def calcular_metricas(df_saldo: pd.DataFrame, df_ventas: pd.DataFrame) -> pd.DataFrame:
     """
     Calcula métricas de stock usando lógica de Power BI:
@@ -276,115 +186,106 @@ def calcular_metricas(df_saldo: pd.DataFrame, df_ventas: pd.DataFrame) -> pd.Dat
         
         if not df_ventas.empty:
             from dateutil.relativedelta import relativedelta
-            
+
             hoy = pd.Timestamp.now().normalize()
-            
-            dias_periodo = 120
-            
+            dias_periodo = int(os.environ.get("METRIC_DIAS", "120"))
+
             fin_actual = hoy
             inicio_actual = fin_actual - pd.Timedelta(days=dias_periodo - 1)
-            
-            fin_aa_analisis = hoy - relativedelta(years=1)
-            inicio_aa_analisis = fin_aa_analisis - pd.Timedelta(days=dias_periodo - 1)
-            
-            inicio_aa = hoy - relativedelta(months=12)
-            fin_aa = hoy - relativedelta(months=9) - pd.Timedelta(days=1)
-            
+
+            fin_aa = hoy - relativedelta(years=1)
+            inicio_aa = fin_aa - pd.Timedelta(days=dias_periodo - 1)
+
+            inicio_aa_analisis = hoy - relativedelta(years=1)
+            fin_aa_analisis = inicio_aa_analisis + pd.Timedelta(days=dias_periodo - 1)
+
             ventas_aa_analisis = df_ventas[
-                (df_ventas["fecha"] >= inicio_aa_analisis) & 
+                (df_ventas["fecha"] >= inicio_aa_analisis) &
                 (df_ventas["fecha"] <= fin_aa_analisis)
             ].groupby(["cod_articulo", "sucursal"]).agg(
                 vta_aa_analisis=("cantidad_venta", "sum")
             ).reset_index()
-            
+
             ventas_aa = df_ventas[
-                (df_ventas["fecha"] >= inicio_aa) & 
+                (df_ventas["fecha"] >= inicio_aa) &
                 (df_ventas["fecha"] <= fin_aa)
             ].groupby(["cod_articulo", "sucursal"]).agg(
                 vta_aa=("cantidad_venta", "sum")
             ).reset_index()
-            
+
             ventas_actual = df_ventas[
-                (df_ventas["fecha"] >= inicio_actual) & 
+                (df_ventas["fecha"] >= inicio_actual) &
                 (df_ventas["fecha"] <= fin_actual)
             ].groupby(["cod_articulo", "sucursal"]).agg(
                 vta_actual=("cantidad_venta", "sum")
             ).reset_index()
-            
+
             ventas_total = df_ventas.groupby(["cod_articulo", "sucursal"]).agg(
                 total_venta=("cantidad_venta", "sum")
             ).reset_index()
-            
+
             df_resultado = pd.merge(df_saldo, ventas_total, on=["cod_articulo", "sucursal"], how="left")
             df_resultado = pd.merge(df_resultado, ventas_aa_analisis, on=["cod_articulo", "sucursal"], how="left")
             df_resultado = pd.merge(df_resultado, ventas_aa, on=["cod_articulo", "sucursal"], how="left")
             df_resultado = pd.merge(df_resultado, ventas_actual, on=["cod_articulo", "sucursal"], how="left")
-            
+
             df_resultado["total_venta"] = df_resultado["total_venta"].fillna(0)
             df_resultado["vta_aa_analisis"] = df_resultado["vta_aa_analisis"].fillna(0)
             df_resultado["vta_aa"] = df_resultado["vta_aa"].fillna(0)
             df_resultado["vta_actual"] = df_resultado["vta_actual"].fillna(0)
-            
+
             df_resultado["variacion"] = df_resultado["vta_actual"] - df_resultado["vta_aa"]
             df_resultado["variacion_pct"] = df_resultado.apply(
                 lambda row: round((row["variacion"] / row["vta_aa"]) * 100, 0) if row["vta_aa"] > 0 else 0,
                 axis=1
             )
-            
+
             df_resultado["proyeccion"] = df_resultado["vta_aa_analisis"] + df_resultado["variacion"]
             df_resultado["necesidad"] = (df_resultado["proyeccion"] - df_resultado["stock_1"]).round(2)
             import math
             df_resultado["pedido"] = df_resultado["necesidad"].apply(lambda x: max(0, math.ceil(x)) if x > 0 else 0)
-            
-            df_resultado["coef_aa"] = df_resultado["vta_aa"] / 3
-            df_resultado["coef_actual"] = df_resultado["vta_actual"] / 3
-            df_resultado["coef_mensual"] = df_resultado[["coef_aa", "coef_actual"]].max(axis=1)
-            
-            df_resultado["venta_mensual_proyectada"] = df_resultado["coef_mensual"]
-            df_resultado["venta_promedio_diaria"] = df_resultado["coef_mensual"] / 30
-            
+
+            # Venta de referencia: AA análisis si existe, si no actual
+            df_resultado["venta_ref"] = df_resultado.apply(
+                lambda r: r["vta_aa_analisis"] if r["vta_aa_analisis"] > 0 else r["vta_actual"],
+                axis=1
+            )
+            dias_factor = max(dias_periodo / 30, 1)
+            df_resultado["venta_mensual_proyectada"] = df_resultado["venta_ref"] / dias_factor
+            df_resultado["venta_promedio_diaria"] = df_resultado["venta_ref"] / max(dias_periodo, 1)
+
             def calcular_meses_stock(row):
                 stock = row["stock_1"]
-                coef = row["coef_mensual"]
-                venta_base = max(row["vta_aa"], row["vta_actual"])
-                
-                if stock <= 0 or coef <= 0 or venta_base <= 0:
+                venta_ref = row["venta_ref"]
+                if stock <= 0 or venta_ref <= 0:
                     return 0.0
-                return stock / coef
-            
+                return (stock / venta_ref) * dias_factor
+
             df_resultado["meses_stock"] = df_resultado.apply(calcular_meses_stock, axis=1)
-            
-            df_resultado = df_resultado.drop(columns=["coef_aa", "coef_actual", "coef_mensual", "proyeccion"], errors="ignore")
+
+            df_resultado = df_resultado.drop(columns=["proyeccion", "venta_ref"], errors="ignore")
     
     def determinar_alerta(row):
         meses_stock = row.get("meses_stock", 0)
-        dias_stock = meses_stock * 30
-        ventas_actual = row.get("venta_actual", row.get("venta_mensual_proyectada", 0))
-        
+        ventas_actual = row.get("vta_actual", 0)
+
         if meses_stock is None or pd.isna(meses_stock):
             return ""
-        
+
         if meses_stock == 0 and ventas_actual == 0:
-            return "Sin rotación (sin stock)"
-        
-        if dias_stock > 0 and dias_stock < 15 and ventas_actual >= 1:
-            return "Quiebre de stock"
-        
-        if dias_stock >= 15 and dias_stock < 30:
-            return "Stock de Seguridad"
-        
-        if dias_stock >= 30 and dias_stock < 60:
-            return "Pto de Pedido"
-        
-        if dias_stock >= 60 and dias_stock < 90:
-            return "OK"
-        
-        if dias_stock >= 90 and ventas_actual == 0:
-            return "Sin rotación (con sobrestock)"
-        
-        if dias_stock >= 90:
-            return "Sobre stock"
-        
+            return "🟠 Sin rotación"
+        if meses_stock < 1 and ventas_actual > 1:
+            return "⚠️ Quiebre de stock"
+        if meses_stock >= 1 and meses_stock < 2:
+            return "❗ Stock de Seguridad"
+        if meses_stock >= 2 and meses_stock < 3:
+            return "📍 Pto de Pedido"
+        if meses_stock >= 3 and meses_stock < 4:
+            return "✅ OK"
+        if meses_stock >= 4 and ventas_actual == 0:
+            return "🟠 Sin rotación"
+        if meses_stock >= 4:
+            return "📦 Sobrestock"
         return ""
     
     df_resultado["alerta_stock"] = df_resultado.apply(determinar_alerta, axis=1)
@@ -425,7 +326,7 @@ async def sync_data(data: SyncData):
             }
         
         # Insertar datos en lotes (incremental usa UPSERT)
-        inserted = {"saldo": 0, "ventas": 0, "precios": 0, "costos": 0}
+        inserted = {"saldo": 0, "ventas": 0, "precios": 0, "costos": 0, "articulos": 0}
         
         if data.saldo:
             saldo_norm = normalize_saldo_columns(data.saldo)
@@ -434,6 +335,8 @@ async def sync_data(data: SyncData):
             else:
                 db.insert_saldo(saldo_norm, timestamp)
                 inserted["saldo"] = len(saldo_norm)
+            # Guardar snapshot histórico para KPI de evolución real de stock
+            db.insert_saldo_historial_snapshot(saldo_norm, timestamp)
         
         if data.ventas:
             ventas_norm = normalize_ventas_columns(data.ventas)
@@ -442,6 +345,13 @@ async def sync_data(data: SyncData):
             else:
                 db.insert_ventas(ventas_norm, timestamp)
                 inserted["ventas"] = len(ventas_norm)
+
+        if data.articulos:
+            articulos_norm = normalize_articulos_columns(data.articulos)
+            inserted["articulos"] = db.upsert_articulos(articulos_norm, timestamp)
+            # Regenerar categorías a partir de nómina actual
+            if inserted["articulos"] > 0:
+                db.refresh_categorias_from_articulos()
         
         if data.precios:
             precios_norm = normalize_precios_columns(data.precios)
@@ -514,6 +424,230 @@ async def get_precio_articulo(cod_articulo: str):
 async def get_listas_precios():
     return {"listas": db.get_listas_precios()}
 
+@app.get("/articulos")
+async def get_articulos():
+    return {"articulos": db.get_articulos_base()}
+
+# ============== ENDPOINTS DE MATRIZ / KPI ==============
+
+def _parse_csv_param(value: Optional[str]) -> List[str]:
+    if not value:
+        return []
+    return [v.strip() for v in value.split(",") if v.strip()]
+
+def _expand_alertas(alertas: List[str]) -> List[str]:
+    mapping = {
+        "Quiebre de stock": ["⚠️ Quiebre de stock", "Quiebre de stock"],
+        "⚠️ Quiebre de stock": ["⚠️ Quiebre de stock", "Quiebre de stock"],
+        "Stock de Seguridad": ["❗ Stock de Seguridad", "Stock de Seguridad"],
+        "❗ Stock de Seguridad": ["❗ Stock de Seguridad", "Stock de Seguridad"],
+        "Pto de Pedido": ["📍 Pto de Pedido", "Pto de Pedido"],
+        "📍 Pto de Pedido": ["📍 Pto de Pedido", "Pto de Pedido"],
+        "Sobrestock": ["📦 Sobrestock", "Sobrestock", "Sobre stock"],
+        "📦 Sobrestock": ["📦 Sobrestock", "Sobrestock", "Sobre stock"],
+        "Sin rotación": ["🟠 Sin rotación", "Sin rotación (sin stock)", "Sin rotación (con sobrestock)", "Sin rotación"],
+        "🟠 Sin rotación": ["🟠 Sin rotación", "Sin rotación (sin stock)", "Sin rotación (con sobrestock)", "Sin rotación"],
+        "OK": ["✅ OK", "OK"],
+        "✅ OK": ["✅ OK", "OK"],
+    }
+    result: List[str] = []
+    for alerta in alertas:
+        key = alerta.strip()
+        for item in mapping.get(key, [key]):
+            if item and item not in result:
+                result.append(item)
+    return result
+
+@app.get("/matriz-distribucion")
+async def get_matriz_distribucion(
+    dias: int = 30,
+    alertas: Optional[str] = None,
+    sucursales: Optional[str] = None,
+    familias: Optional[str] = None,
+    codigos: Optional[str] = None,
+):
+    """
+    Retorna matriz pivotada lista para grilla.
+    Params separados por coma: alertas, sucursales, familias, codigos (admite * como prefijo).
+    """
+    alertas_list = _expand_alertas(_parse_csv_param(alertas))
+    suc_list = _parse_csv_param(sucursales)
+    fam_list = [f.upper() for f in _parse_csv_param(familias)]
+    cod_list = [c.upper() for c in _parse_csv_param(codigos)]
+
+    data = db.get_matriz_distribucion(
+        dias_proyeccion=dias,
+        familias=None,
+        alertas=alertas_list if alertas_list else None,
+    )
+    if not data:
+        return {"columns": [], "rows": [], "source_rows": 0}
+
+    df = pd.DataFrame(data)
+    if "cod_base" in df.columns and "cod_articulo" in df.columns:
+        df["cod_base"] = df["cod_base"].fillna(df["cod_articulo"])
+
+    if suc_list:
+        df = df[df["sucursal"].isin(suc_list)]
+
+    if cod_list:
+        mask = pd.Series(False, index=df.index)
+        for t in cod_list:
+            if t.endswith("*"):
+                p = t[:-1]
+                mask = mask | df["cod_articulo"].astype(str).str.upper().str.startswith(p, na=False)
+                if "cod_base" in df.columns:
+                    mask = mask | df["cod_base"].astype(str).str.upper().str.startswith(p, na=False)
+            else:
+                mask = mask | df["cod_articulo"].astype(str).str.upper().str.contains(t, na=False)
+                if "cod_base" in df.columns:
+                    mask = mask | df["cod_base"].astype(str).str.upper().str.contains(t, na=False)
+        df = df[mask]
+
+    if fam_list:
+        df = df[df["cod_articulo"].astype(str).str.upper().str[:2].isin(fam_list)]
+
+    if df.empty:
+        return {"columns": [], "rows": [], "source_rows": 0}
+
+    piv = df.pivot_table(
+        index=["cod_base", "cod_articulo"],
+        columns="sucursal",
+        values="necesidad",
+        aggfunc="sum",
+        fill_value=0
+    ).reset_index()
+
+    cdd = df.groupby(["cod_base", "cod_articulo"], as_index=False)["stock_cdd"].sum()
+    cdd = cdd.rename(columns={"stock_cdd": "Stock CDD"})
+    piv = piv.merge(cdd, on=["cod_base", "cod_articulo"], how="left")
+    piv["Stock CDD"] = pd.to_numeric(piv["Stock CDD"], errors="coerce").fillna(0.0)
+
+    orden = [
+        "CRISA 2", "CRISA CENTRAL", "LA TIJERA LUJAN", "LA TIJERA MAIPU",
+        "LA TIJERA MENDOZA", "LA TIJERA SAN JUAN", "LA TIJERA SAN LUIS",
+        "LA TIJERA SAN RAFAEL", "LA TIJERA SMARTIN", "LA TIJERA TUNUYAN",
+    ]
+    base_cols = ["cod_base", "cod_articulo", "Stock CDD"]
+    suc_cols = [c for c in orden if c in piv.columns]
+    other_cols = [c for c in piv.columns if c not in base_cols + suc_cols]
+    piv = piv[base_cols + suc_cols + other_cols]
+    piv["Total"] = piv[suc_cols].sum(axis=1) if suc_cols else 0.0
+
+    ren = {
+        "LA TIJERA LUJAN": "LUJAN",
+        "LA TIJERA MAIPU": "MAIPU",
+        "LA TIJERA MENDOZA": "MENDOZA",
+        "LA TIJERA SAN JUAN": "SAN JUAN",
+        "LA TIJERA SAN LUIS": "SAN LUIS",
+        "LA TIJERA SAN RAFAEL": "SAN RAFAEL",
+        "LA TIJERA SMARTIN": "SMARTIN",
+        "LA TIJERA TUNUYAN": "TUNUYAN",
+        "cod_base": "Cód. base / artículo",
+        "cod_articulo": "Cód. Artículo",
+    }
+    piv = piv.rename(columns=ren)
+
+    columns = list(piv.columns)
+    rows = piv.to_dict(orient="records")
+    return {"columns": columns, "rows": rows, "source_rows": len(df)}
+
+@app.get("/sugerencia-distribucion")
+async def get_sugerencia_distribucion(dias: int = 30, sucursal: Optional[str] = None):
+    data = db.get_sugerencia_distribucion(dias_proyeccion=dias, familias=None)
+    if not data:
+        return {"rows": [], "total": 0}
+    df = pd.DataFrame(data)
+    if sucursal:
+        df = df[df["sucursal"] == sucursal]
+    return {"rows": df.to_dict(orient="records"), "total": len(df)}
+
+@app.get("/kpi-evolucion")
+async def get_kpi_evolucion(sucursal: Optional[str] = None):
+    conn = db.get_connection()
+    params: List[str] = []
+    where_sql = ""
+    if sucursal and sucursal != "Todas":
+        where_sql = "WHERE sucursal = %s"
+        params.append(sucursal)
+
+    q_ventas = f"""
+        SELECT
+            EXTRACT(YEAR FROM fecha)::int AS anio,
+            EXTRACT(MONTH FROM fecha)::int AS mes_num,
+            COALESCE(SUM(cantidad_venta), 0) AS ventas_unidades,
+            COALESCE(SUM(importe), 0) AS ventas_importe
+        FROM ventas
+        {where_sql}
+        GROUP BY 1,2
+        ORDER BY 1,2
+    """
+    df_v = pd.read_sql(q_ventas, conn, params=params)
+
+    filtro_hist = "AND sucursal = %s" if params else ""
+    filtro_hist_join = "WHERE h.sucursal = %s" if params else ""
+    q_stock_hist = f"""
+        WITH ult_mes AS (
+            SELECT
+                DATE_TRUNC('month', snapshot_ts) AS mes,
+                MAX(snapshot_ts) AS ts_ult
+            FROM saldo_historial
+            WHERE snapshot_ts IS NOT NULL
+            {filtro_hist}
+            GROUP BY 1
+        )
+        SELECT
+            EXTRACT(YEAR FROM u.mes)::int AS anio,
+            EXTRACT(MONTH FROM u.mes)::int AS mes_num,
+            COALESCE(SUM(h.stock_1), 0) AS stock_total
+        FROM ult_mes u
+        JOIN saldo_historial h
+          ON h.snapshot_ts = u.ts_ult
+        {filtro_hist_join}
+        GROUP BY 1,2
+        ORDER BY 1,2
+    """
+    try:
+        hist_params: List[str] = []
+        if params:
+            hist_params = [params[0], params[0]]
+        df_s = pd.read_sql(q_stock_hist, conn, params=hist_params)
+    except Exception:
+        fallback_filter = "AND sucursal = %s" if params else ""
+        q_stock_fallback = f"""
+            SELECT
+                EXTRACT(YEAR FROM sync_timestamp)::int AS anio,
+                EXTRACT(MONTH FROM sync_timestamp)::int AS mes_num,
+                COALESCE(SUM(stock_1), 0) AS stock_total
+            FROM saldo
+            WHERE sync_timestamp IS NOT NULL
+            {fallback_filter}
+            GROUP BY 1,2
+            ORDER BY 1,2
+        """
+        df_s = pd.read_sql(q_stock_fallback, conn, params=params)
+
+    conn.close()
+
+    base = pd.DataFrame(columns=["anio", "mes_num"])
+    if not df_v.empty:
+        base = pd.concat([base, df_v[["anio", "mes_num"]]], ignore_index=True)
+    if not df_s.empty:
+        base = pd.concat([base, df_s[["anio", "mes_num"]]], ignore_index=True)
+    if base.empty:
+        return {"rows": []}
+
+    base = base.drop_duplicates()
+    df_kpi = base.merge(df_v, on=["anio", "mes_num"], how="left")
+    df_kpi = df_kpi.merge(df_s, on=["anio", "mes_num"], how="left")
+    for col in ["ventas_unidades", "ventas_importe", "stock_total"]:
+        if col not in df_kpi.columns:
+            df_kpi[col] = 0
+        df_kpi[col] = pd.to_numeric(df_kpi[col], errors="coerce").fillna(0.0)
+
+    df_kpi = df_kpi.sort_values(["anio", "mes_num"])
+    return {"rows": df_kpi.to_dict(orient="records")}
+
 # ============== ENDPOINTS DE COSTOS ==============
 
 @app.get("/costos")
@@ -583,7 +717,20 @@ async def get_sync_info():
         info["ultima_fecha_ventas"] = str(info["ultima_fecha_ventas"])
     if info.get("ultima_sync_saldo"):
         info["ultima_sync_saldo"] = str(info["ultima_sync_saldo"])
+    if info.get("ultima_sync_saldo_historial"):
+        info["ultima_sync_saldo_historial"] = str(info["ultima_sync_saldo_historial"])
+    if info.get("ultima_sync_precios"):
+        info["ultima_sync_precios"] = str(info["ultima_sync_precios"])
+    if info.get("ultima_sync_costos"):
+        info["ultima_sync_costos"] = str(info["ultima_sync_costos"])
+    if info.get("ultima_sync_articulos"):
+        info["ultima_sync_articulos"] = str(info["ultima_sync_articulos"])
     return info
+
+@app.get("/quality")
+async def get_quality():
+    """Diagnóstico de cobertura de datos para monitoreo UI/servicio."""
+    return db.get_data_quality_summary()
 
 @app.post("/recalcular-metricas")
 async def recalcular_metricas():
@@ -626,95 +773,6 @@ async def recalcular_metricas():
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
-
-@app.get("/dashboard", response_class=HTMLResponse)
-async def dashboard():
-    totales: dict = db.get_totales()
-    alertas: dict = db.get_alertas_count()
-    last_sync = db.get_last_sync()
-    
-    sync_info = "Sin sincronizar"
-    if last_sync:
-        sync_info = f"{last_sync.get('timestamp', 'N/A')}"
-    
-    html = f"""
-    <!DOCTYPE html>
-    <html lang="es">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Dashboard - Analisis Comercial</title>
-        <style>
-            * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-            body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; padding: 20px; }}
-            .container {{ max-width: 1200px; margin: 0 auto; }}
-            h1 {{ color: #1f2937; margin-bottom: 20px; font-size: 1.8rem; }}
-            .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 30px; }}
-            .card {{ background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
-            .card h3 {{ font-size: 0.9rem; color: #6b7280; margin-bottom: 8px; }}
-            .card .value {{ font-size: 1.8rem; font-weight: bold; color: #1f2937; }}
-            .quiebre {{ border-left: 4px solid #ef4444; }}
-            .quiebre .value {{ color: #ef4444; }}
-            .normal {{ border-left: 4px solid #22c55e; }}
-            .sobrestock {{ border-left: 4px solid #f59e0b; }}
-            .seguridad {{ border-left: 4px solid #3b82f6; }}
-            .sync-info {{ background: #e0f2fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; }}
-            .refresh-btn {{ background: #3b82f6; color: white; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-size: 1rem; }}
-            .refresh-btn:hover {{ background: #2563eb; }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>Dashboard - Analisis Comercial de Reposicion</h1>
-            
-            <div class="sync-info">
-                Ultima sincronizacion: {sync_info}
-                <button class="refresh-btn" onclick="location.reload()" style="margin-left: 20px;">Actualizar</button>
-            </div>
-            
-            <div class="grid">
-                <div class="card">
-                    <h3>Total Articulos</h3>
-                    <div class="value">{totales.get('total_articulos', 0):,}</div>
-                </div>
-                <div class="card">
-                    <h3>Stock Total</h3>
-                    <div class="value">{float(totales.get('stock_total', 0)):,.0f}</div>
-                </div>
-                <div class="card">
-                    <h3>Venta Total</h3>
-                    <div class="value">{float(totales.get('venta_total', 0)):,.0f}</div>
-                </div>
-                <div class="card quiebre">
-                    <h3>En Quiebre</h3>
-                    <div class="value">{alertas.get('Quiebre', 0):,}</div>
-                </div>
-                <div class="card seguridad">
-                    <h3>Stock de Seguridad</h3>
-                    <div class="value">{alertas.get('Stock de Seguridad', 0):,}</div>
-                </div>
-                <div class="card normal">
-                    <h3>Stock Normal</h3>
-                    <div class="value">{alertas.get('Normal', 0):,}</div>
-                </div>
-                <div class="card sobrestock">
-                    <h3>Sobrestock</h3>
-                    <div class="value">{alertas.get('Sobrestock', 0):,}</div>
-                </div>
-                <div class="card">
-                    <h3>Sin Rotacion</h3>
-                    <div class="value">{alertas.get('Sin rotación', 0):,}</div>
-                </div>
-            </div>
-            
-            <p style="color: #6b7280; font-size: 0.9rem;">
-                Para el dashboard completo con filtros y graficos, accede al Streamlit Dashboard en el puerto 8000.
-            </p>
-        </div>
-    </body>
-    </html>
-    """
-    return html
 
 class WhatsAppRequest(BaseModel):
     numero_destino: str
@@ -874,138 +932,6 @@ async def enviar_emails_sucursales_rojas(emails: dict, dias: int = 30):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-ws_proxy_log = []
-
-def wlog(msg):
-    logger.info(msg)
-    ws_proxy_log.append(f"{datetime.now().isoformat()} {msg}")
-    if len(ws_proxy_log) > 100:
-        ws_proxy_log.pop(0)
-
-@app.get("/wsdebug")
-async def wsdebug():
-    return {"ws_proxy_log": ws_proxy_log}
-
-@app.websocket("/_stcore/stream")
-async def ws_proxy(ws: WebSocket):
-    await ws.accept()
-    wlog("client connected")
-    cookie_header = ws.headers.get("cookie", "")
-    origin = ws.headers.get("origin", "")
-    wlog(f"client headers: cookie={bool(cookie_header)} origin={origin}")
-    headers = {}
-    if cookie_header:
-        headers["Cookie"] = cookie_header
-    if origin:
-        headers["Origin"] = origin
-    session = aiohttp.ClientSession()
-    try:
-        backend = await session.ws_connect(
-            f"http://127.0.0.1:{STREAMLIT_PORT}/_stcore/stream",
-            max_msg_size=2**23,
-            heartbeat=30,
-            headers=headers,
-        )
-        wlog("backend connected")
-
-        async def client_to_server():
-            c2s_count = 0
-            try:
-                while True:
-                    msg = await ws.receive()
-                    msg_type = msg.get("type", "unknown")
-                    if msg_type == "websocket.disconnect":
-                        wlog(f"c2s: client disconnect after {c2s_count} msgs")
-                        break
-                    if "text" in msg and msg["text"] is not None:
-                        c2s_count += 1
-                        wlog(f"c2s: text len={len(msg['text'])} (msg #{c2s_count})")
-                        await backend.send_str(msg["text"])
-                    elif "bytes" in msg and msg["bytes"] is not None:
-                        c2s_count += 1
-                        wlog(f"c2s: bytes len={len(msg['bytes'])} (msg #{c2s_count})")
-                        await backend.send_bytes(msg["bytes"])
-                    else:
-                        wlog(f"c2s: unknown msg type={msg_type} keys={list(msg.keys())}")
-            except Exception as e:
-                wlog(f"c2s ended: {type(e).__name__}: {e} after {c2s_count} msgs")
-
-        async def server_to_client():
-            s2c_count = 0
-            try:
-                async for msg in backend:
-                    if msg.type == aiohttp.WSMsgType.TEXT:
-                        s2c_count += 1
-                        wlog(f"s2c: text len={len(msg.data)} (msg #{s2c_count})")
-                        await ws.send_text(msg.data)
-                    elif msg.type == aiohttp.WSMsgType.BINARY:
-                        s2c_count += 1
-                        wlog(f"s2c: bytes len={len(msg.data)} (msg #{s2c_count})")
-                        await ws.send_bytes(msg.data)
-                    elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
-                        wlog(f"s2c: backend closed/error type={msg.type} after {s2c_count} msgs")
-                        break
-                    elif msg.type == aiohttp.WSMsgType.CLOSING:
-                        wlog(f"s2c: backend closing after {s2c_count} msgs")
-                        break
-                    else:
-                        wlog(f"s2c: unknown type={msg.type} after {s2c_count} msgs")
-            except Exception as e:
-                wlog(f"s2c ended: {type(e).__name__}: {e} after {s2c_count} msgs")
-
-        done, pending = await asyncio.wait(
-            [asyncio.create_task(client_to_server()), asyncio.create_task(server_to_client())],
-            return_when=asyncio.FIRST_COMPLETED,
-        )
-        for task in pending:
-            task.cancel()
-        wlog(f"proxy tasks done, {len(pending)} cancelled")
-    except Exception as e:
-        wlog(f"proxy error: {type(e).__name__}: {e}")
-    finally:
-        try:
-            await backend.close()
-        except Exception:
-            pass
-        await session.close()
-        try:
-            await ws.close()
-        except Exception:
-            pass
-        wlog("proxy closed")
-
-@app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"])
-async def proxy_to_streamlit(request: Request, path: str = ""):
-    for api_path in API_PATHS:
-        if f"/{path}".startswith(api_path):
-            return Response(status_code=404, content="Not Found")
-
-    target_url = f"http://127.0.0.1:{STREAMLIT_PORT}/{path}"
-    if request.url.query:
-        target_url += f"?{request.url.query}"
-
-    headers = dict(request.headers)
-    headers.pop("host", None)
-
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            body = await request.body()
-            resp = await client.request(
-                method=request.method,
-                url=target_url,
-                headers=headers,
-                content=body,
-            )
-            excluded = {"transfer-encoding", "content-encoding", "content-length"}
-            resp_headers = {k: v for k, v in resp.headers.items() if k.lower() not in excluded}
-            return Response(
-                content=resp.content,
-                status_code=resp.status_code,
-                headers=resp_headers,
-            )
-    except Exception:
-        return Response(status_code=502, content="Streamlit not ready")
-
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    uvicorn.run(app, host="0.0.0.0", port=5000)
