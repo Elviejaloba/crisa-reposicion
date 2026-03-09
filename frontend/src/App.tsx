@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   LineChart,
   Line,
@@ -9,7 +9,15 @@ import {
   Legend,
 } from 'recharts'
 
-const API_BASE = (import.meta as any).env?.VITE_API_BASE || 'http://localhost:5000'
+const defaultApiBase =
+  typeof window !== 'undefined'
+    ? (() => {
+        const host = window.location.hostname
+        const safeHost = !host || host === '0.0.0.0' || host === '[::]' ? '127.0.0.1' : host
+        return `http://${safeHost}:5003`
+      })()
+    : 'http://127.0.0.1:5003'
+const API_BASE = (import.meta as any).env?.VITE_API_BASE || defaultApiBase
 const LOGO_URL = (import.meta as any).env?.VITE_LOGO_URL || '/logo-crisa.png'
 
 const FAMILIAS = ['AR', 'BL', 'MC', 'ME', 'MU', 'OT', 'PR', 'PV', 'SI', 'TA']
@@ -21,6 +29,23 @@ const ALERTAS = [
   { value: 'Sobrestock', label: 'Sobrestock', tone: 'purple' },
   { value: 'Sin rotación', label: 'Sin rotación', tone: 'muted' },
   { value: 'OK', label: 'OK', tone: 'success' },
+]
+
+const BASE_KEY = 'Cód. base / artículo'
+const ART_KEY = 'Cód. Artículo'
+
+const SUC_NUESTRAS = [
+  'LA TIJERA MENDOZA',
+  'LA TIJERA SAN JUAN',
+  'LA TIJERA SAN LUIS',
+]
+
+const SUC_FRANQUICIAS = [
+  'LA TIJERA LUJAN',
+  'LA TIJERA SAN RAFAEL',
+  'LA TIJERA SMARTIN',
+  'LA TIJERA TUNUYAN',
+  'LA TIJERA MAIPU',
 ]
 
 type MatrixResponse = {
@@ -62,6 +87,7 @@ function MultiPicker({
   onChange,
 }: MultiPickerProps) {
   const [filter, setFilter] = useState('')
+  const detailsRef = useRef<HTMLDetailsElement | null>(null)
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase()
     if (!q) return options
@@ -72,13 +98,17 @@ function MultiPicker({
     ? emptyLabel
     : value.length === options.length
       ? allLabel
-      : `${value.length} seleccionadas`
+      : (() => {
+          const first = value.slice(0, 2)
+          const rest = value.length - first.length
+          return rest > 0 ? `${first.join(', ')} +${rest}` : first.join(', ')
+        })()
 
   return (
     <div className="field">
       <label>{label}</label>
-      <details className="multi">
-        <summary>{summary}</summary>
+      <details className="multi" ref={detailsRef}>
+        <summary title={value.length ? value.join(', ') : summary}>{summary}</summary>
         <div className="multi-panel" onClick={(e) => e.stopPropagation()}>
           <div className="multi-toolbar">
             <input
@@ -87,10 +117,22 @@ function MultiPicker({
               placeholder={searchPlaceholder}
             />
             <div className="multi-actions">
-              <button type="button" onClick={() => onChange([...options])}>
+              <button
+                type="button"
+                onClick={() => {
+                  onChange([...options])
+                  detailsRef.current?.removeAttribute('open')
+                }}
+              >
                 Seleccionar todas
               </button>
-              <button type="button" onClick={() => onChange([])}>
+              <button
+                type="button"
+                onClick={() => {
+                  onChange([])
+                  detailsRef.current?.removeAttribute('open')
+                }}
+              >
                 Limpiar
               </button>
             </div>
@@ -110,6 +152,7 @@ function MultiPicker({
                           ? value.filter((v) => v !== opt)
                           : [...value, opt]
                       )
+                      detailsRef.current?.removeAttribute('open')
                     }}
                   />
                   <span>{opt}</span>
@@ -126,12 +169,33 @@ function MultiPicker({
 const formatNumber = (v: number) =>
   new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 }).format(v)
 
+const formatMoney = (v: number) =>
+  new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(v)
+
+const parseLocaleNumber = (value: unknown): number => {
+  if (typeof value === 'number') return value
+  if (typeof value !== 'string') return Number.NaN
+  const s = value.trim()
+  if (!s) return Number.NaN
+  const normalized = s.replace(/\./g, '').replace(',', '.')
+  if (!/^-?\d+(\.\d+)?$/.test(normalized)) return Number.NaN
+  return Number(normalized)
+}
+
 const formatMes = (mes: number) =>
   ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'][mes - 1] || ''
 
+const normalizeDateString = (value: string) => {
+  const trimmed = value.trim()
+  if (!trimmed) return trimmed
+  const withT = trimmed.includes('T') ? trimmed : trimmed.replace(' ', 'T')
+  return withT.replace(/(\.\d{3})\d+/, '$1')
+}
+
 const formatSync = (value: string) => {
   if (!value || value === 'Sin datos') return 'Sin datos'
-  const d = new Date(value)
+  const normalized = normalizeDateString(value)
+  const d = new Date(normalized)
   if (!Number.isNaN(d.getTime())) {
     return new Intl.DateTimeFormat('es-AR', {
       day: '2-digit',
@@ -139,6 +203,7 @@ const formatSync = (value: string) => {
       year: '2-digit',
       hour: '2-digit',
       minute: '2-digit',
+      hour12: false,
     }).format(d)
   }
   return value
@@ -155,11 +220,36 @@ export default function App() {
   const [codigoInput, setCodigoInput] = useState<string>('')
   const [codigo, setCodigo] = useState<string>('')
   const [matrix, setMatrix] = useState<MatrixResponse>({ columns: [], rows: [], source_rows: 0 })
+  const [matrixLoading, setMatrixLoading] = useState<boolean>(false)
+  const [matrixError, setMatrixError] = useState<string>('')
   const [sugerencia, setSugerencia] = useState<SugerenciaResponse>({ rows: [], total: 0 })
+  const [sugerenciaLoading, setSugerenciaLoading] = useState<boolean>(false)
+  const [sugerenciaError, setSugerenciaError] = useState<string>('')
+  const [sugSortCol, setSugSortCol] = useState<string>('stock_sucursal')
+  const [sugSortDesc, setSugSortDesc] = useState<boolean>(true)
+  const [sugRowLimit, setSugRowLimit] = useState<number>(200)
+  const [sugOnlyPositive, setSugOnlyPositive] = useState<boolean>(true)
   const [kpi, setKpi] = useState<KpiRow[]>([])
-  const [sortCol, setSortCol] = useState<string>('Total')
+  const [kpiSucursal, setKpiSucursal] = useState<string>('Todas')
+  const [kpiMeta, setKpiMeta] = useState<any>(null)
+  const [kpiLoading, setKpiLoading] = useState<boolean>(false)
+  const [kpiError, setKpiError] = useState<string>('')
+  const [sortCol, setSortCol] = useState<string>('CRISA CENTRAL')
   const [sortDesc, setSortDesc] = useState<boolean>(true)
   const [logoOk, setLogoOk] = useState<boolean>(true)
+  const [rowLimit, setRowLimit] = useState<number>(200)
+  const matrixRef = useRef<HTMLTableElement | null>(null)
+
+  const nuestrasDisponibles = useMemo(
+    () => SUC_NUESTRAS.filter((s) => sucursales.includes(s)),
+    [sucursales]
+  )
+  const franquiciasDisponibles = useMemo(
+    () => SUC_FRANQUICIAS.filter((s) => sucursales.includes(s)),
+    [sucursales]
+  )
+  const isSameSelection = (a: string[], b: string[]) =>
+    a.length === b.length && a.every((v) => b.includes(v))
 
   useEffect(() => {
     fetch(`${API_BASE}/sync-info`)
@@ -173,89 +263,380 @@ export default function App() {
       .catch(() => setSucursales([]))
   }, [])
 
-  const queryMatrix = useMemo(() => {
+  const queryMatrixRaw = useMemo(() => {
     const params = new URLSearchParams()
     params.set('dias', String(dias))
     if (selAlertas.length) params.set('alertas', selAlertas.join(','))
     if (selSuc.length) params.set('sucursales', selSuc.join(','))
     if (selFamilias.length) params.set('familias', selFamilias.join(','))
     if (codigo.trim()) params.set('codigos', codigo.trim())
+    params.set('limit', String(rowLimit))
     return params.toString()
-  }, [dias, selAlertas, selSuc, selFamilias, codigo])
+  }, [dias, selAlertas, selSuc, selFamilias, codigo, rowLimit])
+
+  const [queryMatrix, setQueryMatrix] = useState(queryMatrixRaw)
 
   useEffect(() => {
-    fetch(`${API_BASE}/matriz-distribucion?${queryMatrix}`)
-      .then((r) => r.json())
+    const t = setTimeout(() => setQueryMatrix(queryMatrixRaw), 300)
+    return () => clearTimeout(t)
+  }, [queryMatrixRaw])
+
+  useEffect(() => {
+    setMatrixLoading(true)
+    setMatrixError('')
+    const controller = new AbortController()
+    let timedOut = false
+    const timeoutId = window.setTimeout(() => {
+      timedOut = true
+      controller.abort()
+    }, 20000)
+    fetch(`${API_BASE}/matriz-distribucion?${queryMatrix}`, { signal: controller.signal })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      })
       .then((d) => {
         setMatrix(d)
-        if (d?.columns?.includes('Total')) setSortCol('Total')
+        if (d?.columns?.includes('CRISA CENTRAL')) setSortCol('CRISA CENTRAL')
       })
-      .catch(() => setMatrix({ columns: [], rows: [], source_rows: 0 }))
+      .catch((err) => {
+        if (err?.name === 'AbortError') {
+          if (timedOut) setMatrixError('Tiempo de espera agotado')
+          return
+        }
+        setMatrix({ columns: [], rows: [], source_rows: 0 })
+        setMatrixError(err?.message || 'Error al cargar')
+      })
+      .finally(() => {
+        window.clearTimeout(timeoutId)
+        setMatrixLoading(false)
+      })
+    return () => {
+      window.clearTimeout(timeoutId)
+      controller.abort()
+    }
   }, [queryMatrix])
 
   useEffect(() => {
     if (!matrix.columns.length) return
     if (!matrix.columns.includes(sortCol)) {
-      const fallback = matrix.columns.find((c) => c !== baseKey && c !== artKey) || matrix.columns[0]
+      const fallback = matrix.columns.find((c) => c !== BASE_KEY && c !== ART_KEY) || matrix.columns[0]
       setSortCol(fallback)
     }
-  }, [matrix.columns, sortCol, baseKey, artKey])
+  }, [matrix.columns, sortCol])
 
   useEffect(() => {
     if (tab !== 'sugerencia') return
     const params = new URLSearchParams()
     params.set('dias', String(dias))
-    fetch(`${API_BASE}/sugerencia-distribucion?${params}`)
-      .then((r) => r.json())
+    params.set('limit', String(sugRowLimit))
+    params.set('solo_sugeridos', String(sugOnlyPositive))
+    if (selAlertas.length) params.set('alertas', selAlertas.join(','))
+    if (selSuc.length) params.set('sucursales', selSuc.join(','))
+    if (selFamilias.length) params.set('familias', selFamilias.join(','))
+    if (codigo.trim()) params.set('codigos', codigo.trim())
+    setSugerenciaLoading(true)
+    setSugerenciaError('')
+    const controller = new AbortController()
+    let timedOut = false
+    const timeoutId = window.setTimeout(() => {
+      timedOut = true
+      controller.abort()
+    }, 20000)
+    fetch(`${API_BASE}/sugerencia-distribucion?${params}`, { signal: controller.signal })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      })
       .then((d) => setSugerencia(d))
-      .catch(() => setSugerencia({ rows: [], total: 0 }))
-  }, [tab, dias])
+      .catch((err) => {
+        if (err?.name === 'AbortError') {
+          if (timedOut) setSugerenciaError('Tiempo de espera agotado')
+          return
+        }
+        setSugerencia({ rows: [], total: 0 })
+        setSugerenciaError(err?.message || 'Error al cargar')
+      })
+      .finally(() => {
+        window.clearTimeout(timeoutId)
+        setSugerenciaLoading(false)
+      })
+    return () => {
+      window.clearTimeout(timeoutId)
+      controller.abort()
+    }
+  }, [tab, dias, sugRowLimit, sugOnlyPositive, selAlertas, selSuc, selFamilias, codigo])
+
+  useEffect(() => {
+    if (!sugerencia.rows.length) return
+    const keys = Object.keys(sugerencia.rows[0])
+    if (!keys.includes(sugSortCol)) {
+      const fallback =
+        keys.includes('stock_sucursal')
+          ? 'stock_sucursal'
+          : (keys.find((k) => k !== 'sucursal' && k !== 'cod_articulo') || keys[0])
+      setSugSortCol(fallback)
+      setSugSortDesc(true)
+    }
+  }, [sugerencia.rows, sugSortCol])
+
+  useEffect(() => {
+    if (tab !== 'sugerencia') return
+    // Al entrar en la pestaña, forzar orden por Stock_Sucursal desc
+    setSugSortCol('stock_sucursal')
+    setSugSortDesc(true)
+  }, [tab])
+
+  const sugerenciaColumns = useMemo(() => {
+    if (!sugerencia.rows.length) return []
+    const keys = Object.keys(sugerencia.rows[0])
+    const preferred = [
+      'sucursal',
+      'cod_base',
+      'cod_articulo',
+      'stock_sucursal',
+      'stock_cdd',
+      'ventas_periodo',
+      'venta_promedio_diaria',
+      'cobertura_dias',
+      'meses_stock',
+      'alerta_stock',
+      'prioridad',
+      'costo_unitario',
+      'necesidad',
+      'sugerencia_distribuir',
+      'valor_reponer_costo',
+    ]
+    const ordered = preferred.filter((k) => keys.includes(k))
+    const rest = keys.filter((k) => !ordered.includes(k))
+    return [...ordered, ...rest]
+  }, [sugerencia.rows])
+
+  const sugerenciaLabels: Record<string, string> = {
+    sucursal: 'Sucursal',
+    cod_base: 'Cod. base',
+    cod_articulo: 'Cod. articulo',
+    stock_sucursal: 'Stock sucursal',
+    stock_cdd: 'Stock CDD',
+    ventas_periodo: 'Ventas periodo',
+    venta_promedio_diaria: 'Venta prom. diaria',
+    cobertura_dias: 'Cobertura (dias)',
+    meses_stock: 'Meses stock',
+    alerta_stock: 'Alerta stock',
+    prioridad: 'Prioridad',
+    costo_unitario: 'Costo Rep.',
+    necesidad: 'Necesidad',
+    sugerencia_distribuir: 'Sugerencia',
+    valor_reponer_costo: 'Monto a reponer (costo)',
+  }
+
+  const sugerenciaHints: Record<string, string> = {
+    sucursal: 'Sucursal de la tienda',
+    cod_base: 'Codigo base del articulo',
+    cod_articulo: 'Codigo especifico del articulo',
+    stock_sucursal: 'Stock disponible en la sucursal',
+    stock_cdd: 'Stock disponible en CDD',
+    ventas_periodo: 'Ventas del periodo seleccionado',
+    venta_promedio_diaria: 'Ventas promedio por dia',
+    cobertura_dias: 'Dias de cobertura: stock / venta diaria',
+    meses_stock: 'Meses de cobertura: stock / venta mensual',
+    alerta_stock: 'Estado de stock segun cobertura',
+    prioridad: 'Prioridad de reposicion',
+    costo_unitario: 'Costo de reposicion por unidad',
+    necesidad: 'Ventas periodo - stock sucursal',
+    sugerencia_distribuir: 'Unidades sugeridas a reponer',
+    valor_reponer_costo: 'Sugerencia x Costo Rep.',
+  }
+
+  const sugerenciaSortedRows = useMemo(() => {
+    if (!sugerencia.rows.length || !sugSortCol) return sugerencia.rows
+    const data = [...sugerencia.rows]
+    data.sort((a, b) => {
+      const vaRaw = a[sugSortCol]
+      const vbRaw = b[sugSortCol]
+      const va = parseLocaleNumber(vaRaw)
+      const vb = parseLocaleNumber(vbRaw)
+      const bothNumeric = Number.isFinite(va) && Number.isFinite(vb)
+      if (bothNumeric) return sugSortDesc ? vb - va : va - vb
+      const sa = String(vaRaw ?? '')
+      const sb = String(vbRaw ?? '')
+      const cmp = sa.localeCompare(sb, 'es', { numeric: true, sensitivity: 'base' })
+      return sugSortDesc ? -cmp : cmp
+    })
+    return data
+  }, [sugerencia.rows, sugSortCol, sugSortDesc])
+
+  const sugerenciaResumen = useMemo(() => {
+    const counts: Record<string, number> = {}
+    sugerenciaSortedRows.forEach((r) => {
+      const k = String(r.prioridad || '').trim() || 'Sin prioridad'
+      counts[k] = (counts[k] || 0) + 1
+    })
+    return counts
+  }, [sugerenciaSortedRows])
+
+  const sugerenciaTotales = useMemo(() => {
+    const totalUnidades = sugerenciaSortedRows.reduce((acc, r) => acc + (parseLocaleNumber(r.sugerencia_distribuir) || 0), 0)
+    const totalVenta = sugerenciaSortedRows.reduce((acc, r) => acc + (parseLocaleNumber(r.valor_reponer_venta) || 0), 0)
+    const totalCosto = sugerenciaSortedRows.reduce((acc, r) => acc + (parseLocaleNumber(r.valor_reponer_costo) || 0), 0)
+    return { totalUnidades, totalVenta, totalCosto }
+  }, [sugerenciaSortedRows])
 
   useEffect(() => {
     if (tab !== 'kpi') return
     const params = new URLSearchParams()
-    if (selSuc.length === 1) params.set('sucursal', selSuc[0])
-    fetch(`${API_BASE}/kpi-evolucion?${params}`)
-      .then((r) => r.json())
-      .then((d) => setKpi(d.rows || []))
-      .catch(() => setKpi([]))
-  }, [tab, selSuc])
-
-  const baseKey = 'Cód. base / artículo'
-  const artKey = 'Cód. Artículo'
+    if (kpiSucursal && kpiSucursal !== 'Todas') {
+      params.set('sucursales', kpiSucursal)
+    } else if (selSuc.length) {
+      params.set('sucursales', selSuc.join(','))
+    }
+    if (selFamilias.length) params.set('familias', selFamilias.join(','))
+    if (codigo.trim()) params.set('codigos', codigo.trim())
+    setKpiLoading(true)
+    setKpiError('')
+    const controller = new AbortController()
+    let timedOut = false
+    const timeoutId = window.setTimeout(() => {
+      timedOut = true
+      controller.abort()
+    }, 20000)
+    fetch(`${API_BASE}/kpi-evolucion?${params}`, { signal: controller.signal })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      })
+      .then((d) => {
+        setKpi(d.rows || [])
+        setKpiMeta(d.stock_hist || null)
+      })
+      .catch((err) => {
+        if (err?.name === 'AbortError') {
+          if (timedOut) setKpiError('Tiempo de espera agotado')
+          return
+        }
+        setKpi([])
+        setKpiError(err?.message || 'Error al cargar')
+      })
+      .finally(() => {
+        window.clearTimeout(timeoutId)
+        setKpiLoading(false)
+      })
+    return () => {
+      window.clearTimeout(timeoutId)
+      controller.abort()
+    }
+  }, [tab, kpiSucursal, selSuc, selFamilias, codigo])
 
   const displayRows = useMemo(() => {
     const rows = [...(matrix.rows || [])]
-    const hasTotal = rows.some((r) => String(r[baseKey] || '').toLowerCase() === 'total')
-    if (!hasTotal && rows.length && matrix.columns.length) {
-      const total: Record<string, any> = {}
+    const hasTotal = rows.some((r) => String(r[BASE_KEY] || '').toLowerCase() === 'total')
+    const dataRows = rows.filter((r) => String(r[BASE_KEY] || '').toLowerCase() !== 'total')
+    const totalCol = 'Total'
+
+    // Filtrar solo artículos con necesidad (Total < 0)
+    const filtered = dataRows.filter((r) => {
+      const n = parseLocaleNumber(r[totalCol])
+      return Number.isFinite(n) ? n < 0 : false
+    })
+
+    const total: Record<string, any> = {}
+    if (filtered.length && matrix.columns.length) {
       matrix.columns.forEach((c) => {
-        if (c === baseKey) total[c] = 'Total'
-        else if (c === artKey) total[c] = ''
+        if (c === BASE_KEY) total[c] = 'Total'
+        else if (c === ART_KEY) total[c] = ''
         else {
-          const sum = rows.reduce((acc, r) => acc + (Number(r[c]) || 0), 0)
+          const sum = filtered.reduce((acc, r) => acc + (parseLocaleNumber(r[c]) || 0), 0)
           total[c] = sum
         }
       })
-      rows.push(total)
     }
-    return rows
-  }, [matrix.rows, matrix.columns, baseKey, artKey])
+
+    if (!hasTotal && filtered.length && matrix.columns.length) {
+      return [...filtered, total]
+    }
+    if (hasTotal && filtered.length) {
+      return [...filtered, total]
+    }
+    return filtered
+  }, [matrix.rows, matrix.columns])
+
+  const displayColumns = useMemo(() => {
+    if (!matrix.columns.length) return []
+    const cols = matrix.columns.filter((c) => c !== ART_KEY)
+    const preferred = [
+      BASE_KEY,
+      'Stock CDD',
+      'CRISA CENTRAL',
+      'MENDOZA',
+      'CRISA 2',
+      'LUJAN',
+      'MAIPU',
+      'SAN JUAN',
+      'SAN LUIS',
+      'SAN RAFAEL',
+      'SMARTIN',
+      'TUNUYAN',
+      'Total',
+    ]
+    const ordered = preferred.filter((c) => cols.includes(c))
+    const rest = cols.filter((c) => !ordered.includes(c))
+    return [...ordered, ...rest]
+  }, [matrix.columns])
 
   const sortedRows = useMemo(() => {
     if (!displayRows.length || !sortCol) return displayRows
-    const totalRow = displayRows.find((r) => String(r[baseKey] || '').toLowerCase() === 'total')
+    const totalRow = displayRows.find((r) => String(r[BASE_KEY] || '').toLowerCase() === 'total')
     const data = displayRows.filter((r) => r !== totalRow)
     data.sort((a, b) => {
-      const va = Number(a[sortCol] ?? 0)
-      const vb = Number(b[sortCol] ?? 0)
-      if (Number.isNaN(va) && Number.isNaN(vb)) return 0
-      if (Number.isNaN(va)) return 1
-      if (Number.isNaN(vb)) return -1
-      return sortDesc ? vb - va : va - vb
+      const vaRaw = a[sortCol]
+      const vbRaw = b[sortCol]
+      const va = parseLocaleNumber(vaRaw)
+      const vb = parseLocaleNumber(vbRaw)
+      const bothNumeric = Number.isFinite(va) && Number.isFinite(vb)
+      if (bothNumeric) {
+        return sortDesc ? vb - va : va - vb
+      }
+      const sa = String(vaRaw ?? '')
+      const sb = String(vbRaw ?? '')
+      const cmp = sa.localeCompare(sb, 'es', { numeric: true, sensitivity: 'base' })
+      return sortDesc ? -cmp : cmp
     })
     return totalRow ? [...data, totalRow] : data
-  }, [displayRows, sortCol, sortDesc, baseKey])
+  }, [displayRows, sortCol, sortDesc])
+
+  const visibleRows = useMemo(() => {
+    if (!sortedRows.length) return sortedRows
+    const totalRow = sortedRows.find((r) => String(r[BASE_KEY] || '').toLowerCase() === 'total')
+    const data = sortedRows.filter((r) => r !== totalRow)
+    const sliced = data.slice(0, rowLimit)
+    return totalRow ? [...sliced, totalRow] : sliced
+  }, [sortedRows, rowLimit])
+
+  useLayoutEffect(() => {
+    const table = matrixRef.current
+    if (!table) return
+    const getHeader = (key: string) => {
+      const esc = (window as any).CSS?.escape ? (window as any).CSS.escape(key) : key.replace(/"/g, '\\"')
+      return table.querySelector(`th[data-col="${esc}"]`) as HTMLTableCellElement | null
+    }
+    const update = () => {
+      const base = getHeader(BASE_KEY)
+      const stock = getHeader('Stock CDD')
+      if (base) table.style.setProperty('--col-base', `${base.offsetWidth}px`)
+      if (stock) table.style.setProperty('--col-stock', `${stock.offsetWidth}px`)
+    }
+    update()
+    let ro: ResizeObserver | null = null
+    if ('ResizeObserver' in window) {
+      ro = new ResizeObserver(() => update())
+      ro.observe(table)
+    }
+    window.addEventListener('resize', update)
+    return () => {
+      ro?.disconnect()
+      window.removeEventListener('resize', update)
+    }
+  }, [displayColumns, visibleRows.length])
 
   const kpiChart = useMemo(() => {
     const rows = [...kpi]
@@ -264,6 +645,18 @@ export default function App() {
       mes: `${formatMes(r.mes_num)} ${String(r.anio).slice(-2)}`,
     }))
   }, [kpi])
+
+  const stockHistNote = useMemo(() => {
+    const stockMonths = kpi.filter((r) => r.stock_total != null).length
+    if (kpiMeta?.meses != null) {
+      if (kpiMeta.meses === 0) return 'Stock historico: sin datos disponibles.'
+      if (kpiMeta.meses === 1) return `Stock historico: solo 1 mes (${kpiMeta.desde}).`
+      return `Stock historico: ${kpiMeta.meses} meses (${kpiMeta.desde} a ${kpiMeta.hasta}).`
+    }
+    if (stockMonths === 0) return 'Stock historico: sin datos disponibles.'
+    if (stockMonths === 1) return 'Stock historico: solo 1 mes disponible.'
+    return ''
+  }, [kpi, kpiMeta])
 
   const lastSyncLabel = syncInfo?.ultima_sync_saldo_historial ||
     syncInfo?.ultima_sync_ventas ||
@@ -276,6 +669,47 @@ export default function App() {
   const totalImporte = kpi.reduce((acc, r) => acc + (r.ventas_importe || 0), 0)
   const totalStock = kpi.reduce((acc, r) => acc + (r.stock_total || 0), 0)
 
+  const downloadExcel = async () => {
+    if (!displayColumns.length || !sortedRows.length) return
+    const { utils, writeFile } = await import('xlsx')
+    const header = displayColumns.map((c) => (c === BASE_KEY ? 'Cod. base' : c))
+    const rows = sortedRows.map((r) => {
+      const row: Record<string, any> = {}
+      displayColumns.forEach((c, idx) => {
+        const key = header[idx]
+        const v = r[c]
+        if (c === BASE_KEY || c === ART_KEY) {
+          row[key] = v ?? ''
+        } else {
+          const n = parseLocaleNumber(v)
+          row[key] = Number.isFinite(n) ? n : (v ?? '')
+        }
+      })
+      return row
+    })
+    const ws = utils.json_to_sheet(rows, { header })
+    const wb = utils.book_new()
+    utils.book_append_sheet(wb, ws, 'Matriz')
+    writeFile(wb, `matriz_distribucion_${new Date().toISOString().slice(0, 10)}.xlsx`)
+  }
+
+  const downloadSugerenciaExcel = async () => {
+    if (!sugerenciaSortedRows.length) return
+    const { utils, writeFile } = await import('xlsx')
+    const header = Object.keys(sugerenciaSortedRows[0])
+    const rows = sugerenciaSortedRows.map((r) => {
+      const row: Record<string, any> = {}
+      header.forEach((k) => {
+        row[k] = r[k]
+      })
+      return row
+    })
+    const ws = utils.json_to_sheet(rows, { header })
+    const wb = utils.book_new()
+    utils.book_append_sheet(wb, ws, 'Sugerencia')
+    writeFile(wb, `sugerencia_distribucion_${new Date().toISOString().slice(0, 10)}.xlsx`)
+  }
+
   return (
     <div className="page">
       <div className="header">
@@ -285,7 +719,6 @@ export default function App() {
           ) : (
             <div className="logo-text">CRISA</div>
           )}
-          <div className="logo-sub">Grupo CRISA</div>
         </div>
         <div className="title">
           <h1>Reposición de Sucursales</h1>
@@ -388,7 +821,7 @@ export default function App() {
 
       <section className="tabs">
         <button className={tab === 'distribucion' ? 'active' : ''} onClick={() => setTab('distribucion')}>
-          Distribución
+          Necesidad de Distribucion
         </button>
         <button className={tab === 'sugerencia' ? 'active' : ''} onClick={() => setTab('sugerencia')}>
           Sugerencia de Distribución
@@ -401,57 +834,115 @@ export default function App() {
       {tab === 'distribucion' && (
         <section className="panel">
           <div className="panel-head">
-            <div>
-              <h2>Necesidad de distribución</h2>
-              <p>Filtrado por venta y stock en CDD.</p>
+            <div className="panel-title">
+              <h2>Necesidad de distribucion</h2>
+              <p>Resumen por articulo con necesidad de distribucion segun ventas y stock CDD.</p>
+              <div className="quick-filters">
+                <button
+                  type="button"
+                  className={`quick-chip ${isSameSelection(selSuc, nuestrasDisponibles) ? 'on' : ''}`}
+                  onClick={() => setSelSuc(nuestrasDisponibles)}
+                >
+                  Sucursales Nuestras
+                </button>
+                <button
+                  type="button"
+                  className={`quick-chip ${isSameSelection(selSuc, franquiciasDisponibles) ? 'on' : ''}`}
+                  onClick={() => setSelSuc(franquiciasDisponibles)}
+                >
+                  Franquicias
+                </button>
+              </div>
             </div>
             <div className="sort-box">
-              <label>Ordenar matriz por</label>
-              <select value={sortCol} onChange={(e) => setSortCol(e.target.value)}>
-                {(matrix.columns || [])
-                  .filter((c) => c !== baseKey && c !== artKey)
-                  .map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-              </select>
-              <label className="checkbox">
-                <input type="checkbox" checked={sortDesc} onChange={(e) => setSortDesc(e.target.checked)} />
-                Mayor a menor
-              </label>
+              <div className="sort-row">
+                <div className="sort-item">
+                  <label>Filas a mostrar</label>
+                  <select value={rowLimit} onChange={(e) => setRowLimit(Number(e.target.value))}>
+                    {[100, 200, 500, 1000, 2000].map((n) => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="sort-meta">
+                <div className="hint">
+                  Mostrando {Math.min(rowLimit, Math.max(0, sortedRows.length - 1))} de {Math.max(0, sortedRows.length - 1)}
+                </div>
+                <button type="button" className="download-btn" onClick={downloadExcel} title="Descargar Excel">
+                  <span className="download-icon" aria-hidden="true"></span>
+                  Excel
+                </button>
+              </div>
             </div>
           </div>
 
           <div className="matrix-wrap">
-            {matrix.columns.length === 0 ? (
+            {matrixLoading ? (
+              <div className="overlay-loading">
+                <div className="spinner"></div>
+                <div className="overlay-text">Buscando datos...</div>
+              </div>
+            ) : matrixError ? (
+              <div className="empty error">Error al cargar datos: {matrixError}</div>
+            ) : matrix.columns.length === 0 ? (
               <div className="empty">Sin datos para mostrar con los filtros seleccionados.</div>
             ) : (
-              <table className="matrix">
+              <table className="matrix" ref={matrixRef}>
                 <thead>
                   <tr>
-                    {matrix.columns.map((c, idx) => (
-                      <th key={c} className={idx < 2 ? 'text' : 'num'}>
-                        {c}
-                      </th>
-                    ))}
+                    {displayColumns.map((c, idx) => {
+                      const label = c === BASE_KEY ? 'Cod. base' : c
+                      const sticky =
+                        c === BASE_KEY ? 'sticky-base col-base'
+                          : c === 'Stock CDD' ? 'sticky-stock col-stock'
+                            : ''
+                      const isActive = sortCol === c
+                      return (
+                        <th key={c} data-col={c} className={`${idx < 2 ? 'text' : 'num'} ${sticky}`}>
+                          <button
+                            type="button"
+                            className="th-btn"
+                            onClick={() => {
+                              if (isActive) {
+                                setSortDesc(!sortDesc)
+                              } else {
+                                setSortCol(c)
+                                setSortDesc(true)
+                              }
+                            }}
+                          >
+                            <span>{label}</span>
+                            <span className={`sort-caret ${isActive ? (sortDesc ? 'desc' : 'asc') : ''}`} aria-hidden="true"></span>
+                          </button>
+                        </th>
+                      )
+                    })}
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedRows.map((row, i) => {
-                    const rowKey = `${row[baseKey] ?? ''}-${row[artKey] ?? ''}-${i}`
+                  {visibleRows.map((row, i) => {
+                    const rowKey = `${row[BASE_KEY] ?? ''}-${row[ART_KEY] ?? ''}-${i}`
+                    const isTotalRow = String(row[BASE_KEY] || '').toLowerCase() === 'total'
                     return (
-                      <tr key={rowKey}>
-                        {matrix.columns.map((c, idx) => {
+                      <tr key={rowKey} className={isTotalRow ? 'total-row' : ''}>
+                        {displayColumns.map((c, idx) => {
                           const v = row[c] ?? ''
-                          const n = typeof v === 'number' ? v : Number(v)
+                          const n = parseLocaleNumber(v)
                           const cls = idx < 2 ? 'text' : 'num'
+                          const sticky =
+                            c === BASE_KEY ? 'sticky-base col-base'
+                              : c === 'Stock CDD' ? 'sticky-stock col-stock'
+                                : ''
+                          const isCodeCol = c === BASE_KEY || c === ART_KEY
                           const tone = idx < 2
                             ? ''
                             : Number.isFinite(n)
                               ? n < 0 ? 'neg' : n > 0 ? 'pos' : 'zero'
                               : ''
                           return (
-                            <td key={c} className={`${cls} ${tone}`}>
-                              {typeof v === 'number' ? formatNumber(v) : (Number.isFinite(n) ? formatNumber(n) : String(v))}
+                            <td key={c} className={`${cls} ${tone} ${sticky}`}>
+                              {isCodeCol ? String(v ?? '') : (Number.isFinite(n) ? formatNumber(n) : String(v))}
                             </td>
                           )
                         })}
@@ -469,28 +960,122 @@ export default function App() {
         <section className="panel">
           <div className="panel-head">
             <div>
-              <h2>Sugerencia de distribución</h2>
-              <p>Listado por sucursal y artículo.</p>
+              <h2>Sugerencia de Distribucion</h2>
+              <p>Listado detallado por sucursal y articulo con sugerencias de envio.</p>
+              {sugerenciaSortedRows.length > 0 ? (
+                <div className="mini-stats">
+                  {Object.entries(sugerenciaResumen).map(([k, v]) => (
+                    <span key={k} className="mini-pill">{k}: {v}</span>
+                  ))}
+                  <span className="mini-pill">Unidades sugeridas: {formatNumber(sugerenciaTotales.totalUnidades)}</span>
+                  <span className="mini-pill">Monto a reponer (costo): {formatMoney(sugerenciaTotales.totalCosto)}</span>
+                </div>
+              ) : null}
+            </div>
+            <div className="sort-box">
+              <div className="sort-meta">
+                <div className="hint">Filas: {sugerenciaSortedRows.length}</div>
+                <button
+                  type="button"
+                  className={`toggle-chip ${sugOnlyPositive ? 'on' : ''}`}
+                  onClick={() => setSugOnlyPositive((v) => !v)}
+                >
+                  Solo sugerencias &gt; 0
+                </button>
+                <div className="sort-item">
+                  <label>Filas a mostrar</label>
+                  <select value={sugRowLimit} onChange={(e) => setSugRowLimit(Number(e.target.value))}>
+                    {[100, 200, 500, 1000, 2000].map((n) => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  className="download-btn"
+                  onClick={downloadSugerenciaExcel}
+                  title="Descargar Excel"
+                >
+                  <span className="download-icon" aria-hidden="true"></span>
+                  Excel ({sugerenciaSortedRows.length})
+                </button>
+              </div>
             </div>
           </div>
           <div className="table-wrap">
-            {sugerencia.rows.length === 0 ? (
-              <div className="empty">Sin sugerencias para el período seleccionado.</div>
+            {sugerenciaLoading ? (
+              <div className="overlay-loading">
+                <div className="spinner"></div>
+                <div className="overlay-text">Buscando datos...</div>
+              </div>
+            ) : sugerenciaError ? (
+              <div className="empty error">Error al cargar datos: {sugerenciaError}</div>
+            ) : sugerencia.rows.length === 0 ? (
+              <div className="empty">Sin sugerencias para el periodo seleccionado.</div>
             ) : (
-              <table className="simple">
+              <table className="matrix">
                 <thead>
                   <tr>
-                    {Object.keys(sugerencia.rows[0]).map((c) => (
-                      <th key={c}>{c}</th>
-                    ))}
+                    {sugerenciaColumns.map((c) => {
+                      const isActive = sugSortCol === c
+                      const isNumeric =
+                        /(stock|venta|meses|necesidad|sugerencia|promedio|importe|cantidad|cobertura|precio|costo|valor|margen)/i.test(c)
+                      const label = sugerenciaLabels[c] || c.replace(/_/g, ' ')
+                      const hint = sugerenciaHints[c] || label
+                      return (
+                        <th key={c} className={isNumeric ? 'num' : 'text'}>
+                          <button
+                            type="button"
+                            className="th-btn"
+                            onClick={() => {
+                              if (isActive) {
+                                setSugSortDesc(!sugSortDesc)
+                              } else {
+                                setSugSortCol(c)
+                                setSugSortDesc(true)
+                              }
+                            }}
+                          >
+                            <span className="th-text">
+                              <span className="th-main">{label.toUpperCase()}</span>
+                              {hint ? <span className="th-help" title={hint}>?</span> : null}
+                            </span>
+                            <span className={`sort-caret ${isActive ? (sugSortDesc ? 'desc' : 'asc') : ''}`} aria-hidden="true"></span>
+                          </button>
+                        </th>
+                      )
+                    })}
                   </tr>
                 </thead>
                 <tbody>
-                  {sugerencia.rows.map((r, idx) => (
+                  {sugerenciaSortedRows.map((r, idx) => (
                     <tr key={idx}>
-                      {Object.keys(r).map((c) => (
-                        <td key={c}>{String(r[c])}</td>
-                      ))}
+                      {sugerenciaColumns.map((c) => {
+                        const v = r[c]
+                        const n = parseLocaleNumber(v)
+                        const isNumeric =
+                          /(stock|venta|meses|necesidad|sugerencia|promedio|importe|cantidad|cobertura|precio|costo|valor|margen)/i.test(c)
+                        const isMoney =
+                          /(costo_unitario|valor_reponer_costo|valor_reponer_venta|margen_estimado|precio_unitario)/i.test(c)
+                        const label = sugerenciaLabels[c] || c.replace(/_/g, ' ')
+                        if (c === 'prioridad') {
+                          const tag = String(v ?? '').toLowerCase().replace(/\s+/g, '-')
+                          return (
+                            <td key={c} className="text" title={label}>
+                              <span className={`badge ${tag}`}>{String(v ?? '')}</span>
+                            </td>
+                          )
+                        }
+                        const displayValue =
+                          isNumeric && Number.isFinite(n)
+                            ? (isMoney ? formatMoney(n) : formatNumber(n))
+                            : String(v ?? '')
+                        return (
+                          <td key={c} className={isNumeric ? 'num' : 'text'} title={`${label}: ${displayValue}`}>
+                            {displayValue}
+                          </td>
+                        )
+                      })}
                     </tr>
                   ))}
                 </tbody>
@@ -504,8 +1089,22 @@ export default function App() {
         <section className="panel">
           <div className="panel-head">
             <div>
-              <h2>KPI de evolución</h2>
-              <p>Ventas y stock agregados por mes.</p>
+              <h2>KPI de Evolucion</h2>
+              <p>Indicadores historicos de ventas y stock por mes.</p>
+              {stockHistNote ? <small className="hint">{stockHistNote}</small> : null}
+            </div>
+            <div className="sort-box">
+              <div className="sort-row">
+                <div className="sort-item">
+                  <label>Sucursal</label>
+                  <select value={kpiSucursal} onChange={(e) => setKpiSucursal(e.target.value)}>
+                    <option value="Todas">Todas</option>
+                    {sucursales.map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </div>
           </div>
           <div className="kpi-grid">
@@ -523,7 +1122,14 @@ export default function App() {
             </div>
           </div>
           <div className="chart">
-            {kpiChart.length === 0 ? (
+            {kpiLoading ? (
+              <div className="overlay-loading">
+                <div className="spinner"></div>
+                <div className="overlay-text">Buscando datos...</div>
+              </div>
+            ) : kpiError ? (
+              <div className="empty error">Error al cargar datos: {kpiError}</div>
+            ) : kpiChart.length === 0 ? (
               <div className="empty">Sin datos de KPI para mostrar.</div>
             ) : (
               <ResponsiveContainer width="100%" height={320}>
@@ -533,7 +1139,7 @@ export default function App() {
                   <Tooltip />
                   <Legend />
                   <Line type="monotone" dataKey="ventas_unidades" name="Ventas (u)" stroke="#0f766e" strokeWidth={2} />
-                  <Line type="monotone" dataKey="stock_total" name="Stock" stroke="#f97316" strokeWidth={2} />
+                  <Line type="monotone" dataKey="stock_total" name="Stock" stroke="#f97316" strokeWidth={2} connectNulls={false} />
                 </LineChart>
               </ResponsiveContainer>
             )}

@@ -24,6 +24,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "http://0.0.0.0:5173",
         "http://localhost:5000",
         "http://127.0.0.1:5000",
     ],
@@ -465,6 +466,7 @@ async def get_matriz_distribucion(
     sucursales: Optional[str] = None,
     familias: Optional[str] = None,
     codigos: Optional[str] = None,
+    limit: int = 200,
 ):
     """
     Retorna matriz pivotada lista para grilla.
@@ -474,11 +476,17 @@ async def get_matriz_distribucion(
     suc_list = _parse_csv_param(sucursales)
     fam_list = [f.upper() for f in _parse_csv_param(familias)]
     cod_list = [c.upper() for c in _parse_csv_param(codigos)]
+    cod_prefix = [c[:-1] for c in cod_list if c.endswith("*")]
+    cod_contains = [c for c in cod_list if not c.endswith("*")]
 
     data = db.get_matriz_distribucion(
         dias_proyeccion=dias,
         familias=None,
         alertas=alertas_list if alertas_list else None,
+        sucursales=suc_list if suc_list else None,
+        prefijos_familia=fam_list if fam_list else None,
+        codigos_prefix=cod_prefix if cod_prefix else None,
+        codigos_contains=cod_contains if cod_contains else None,
     )
     if not data:
         return {"columns": [], "rows": [], "source_rows": 0}
@@ -486,26 +494,6 @@ async def get_matriz_distribucion(
     df = pd.DataFrame(data)
     if "cod_base" in df.columns and "cod_articulo" in df.columns:
         df["cod_base"] = df["cod_base"].fillna(df["cod_articulo"])
-
-    if suc_list:
-        df = df[df["sucursal"].isin(suc_list)]
-
-    if cod_list:
-        mask = pd.Series(False, index=df.index)
-        for t in cod_list:
-            if t.endswith("*"):
-                p = t[:-1]
-                mask = mask | df["cod_articulo"].astype(str).str.upper().str.startswith(p, na=False)
-                if "cod_base" in df.columns:
-                    mask = mask | df["cod_base"].astype(str).str.upper().str.startswith(p, na=False)
-            else:
-                mask = mask | df["cod_articulo"].astype(str).str.upper().str.contains(t, na=False)
-                if "cod_base" in df.columns:
-                    mask = mask | df["cod_base"].astype(str).str.upper().str.contains(t, na=False)
-        df = df[mask]
-
-    if fam_list:
-        df = df[df["cod_articulo"].astype(str).str.upper().str[:2].isin(fam_list)]
 
     if df.empty:
         return {"columns": [], "rows": [], "source_rows": 0}
@@ -548,13 +536,64 @@ async def get_matriz_distribucion(
     }
     piv = piv.rename(columns=ren)
 
+    # Orden default: CRISA CENTRAL desc (si existe), si no Total, sino primera numérica
+    sort_col = "CRISA CENTRAL" if "CRISA CENTRAL" in piv.columns else ("Total" if "Total" in piv.columns else None)
+    if not sort_col:
+        skip_cols = {"Cód. base / artículo", "Cód. Artículo", "CÃ³d. base / artÃ­culo", "CÃ³d. ArtÃ­culo"}
+        for c in piv.columns:
+            if c not in skip_cols:
+                sort_col = c
+                break
+    if sort_col:
+        piv = piv.sort_values(by=sort_col, ascending=False)
+
+    # Limitar filas para evitar payloads enormes
+    safe_limit = max(0, min(int(limit) if str(limit).isdigit() else 0, 5000))
+    if safe_limit:
+        piv = piv.head(safe_limit)
+
     columns = list(piv.columns)
     rows = piv.to_dict(orient="records")
     return {"columns": columns, "rows": rows, "source_rows": len(df)}
 
 @app.get("/sugerencia-distribucion")
-async def get_sugerencia_distribucion(dias: int = 30, sucursal: Optional[str] = None):
-    data = db.get_sugerencia_distribucion(dias_proyeccion=dias, familias=None)
+async def get_sugerencia_distribucion(
+    dias: int = 30,
+    sucursal: Optional[str] = None,
+    limit: int = 200,
+    alertas: Optional[str] = None,
+    sucursales: Optional[str] = None,
+    familias: Optional[str] = None,
+    codigos: Optional[str] = None,
+    solo_sugeridos: Optional[bool] = True,
+    lista_precio: Optional[str] = None,
+):
+    alertas_list = _expand_alertas(_parse_csv_param(alertas))
+    suc_list = _parse_csv_param(sucursales)
+    fam_list = [f.upper() for f in _parse_csv_param(familias)]
+    cod_list = [c.upper() for c in _parse_csv_param(codigos)]
+    cod_prefix = [c[:-1] for c in cod_list if c.endswith("*")]
+    cod_contains = [c for c in cod_list if not c.endswith("*")]
+
+    sucursales_incluir = set(suc_list)
+    if suc_list:
+        for suc in suc_list:
+            for excluida, principal in db.SUCURSALES_UNIFICAR.items():
+                if suc == principal:
+                    sucursales_incluir.add(excluida)
+
+    data = db.get_sugerencia_distribucion(
+        dias_proyeccion=dias,
+        familias=None,
+        limit=limit,
+        sucursales=list(sucursales_incluir) if sucursales_incluir else None,
+        prefijos_familia=fam_list if fam_list else None,
+        codigos_prefix=cod_prefix if cod_prefix else None,
+        codigos_contains=cod_contains if cod_contains else None,
+        alertas=alertas_list if alertas_list else None,
+        solo_sugeridos=solo_sugeridos,
+        lista_precio=lista_precio,
+    )
     if not data:
         return {"rows": [], "total": 0}
     df = pd.DataFrame(data)
@@ -563,13 +602,42 @@ async def get_sugerencia_distribucion(dias: int = 30, sucursal: Optional[str] = 
     return {"rows": df.to_dict(orient="records"), "total": len(df)}
 
 @app.get("/kpi-evolucion")
-async def get_kpi_evolucion(sucursal: Optional[str] = None):
+async def get_kpi_evolucion(
+    sucursal: Optional[str] = None,
+    sucursales: Optional[str] = None,
+    familias: Optional[str] = None,
+    codigos: Optional[str] = None,
+):
     conn = db.get_connection()
+    suc_list = _parse_csv_param(sucursales)
+    if sucursal and sucursal != "Todas" and sucursal not in suc_list:
+        suc_list.append(sucursal)
+    fam_list = [f.upper() for f in _parse_csv_param(familias)]
+    cod_list = [c.upper() for c in _parse_csv_param(codigos)]
+    cod_prefix = [c[:-1] for c in cod_list if c.endswith("*")]
+    cod_contains = [c for c in cod_list if not c.endswith("*")]
+
     params: List[str] = []
-    where_sql = ""
-    if sucursal and sucursal != "Todas":
-        where_sql = "WHERE sucursal = %s"
-        params.append(sucursal)
+    where_parts: List[str] = []
+    if suc_list:
+        placeholders = ",".join(["%s"] * len(suc_list))
+        where_parts.append(f"v.sucursal IN ({placeholders})")
+        params.extend(suc_list)
+    if fam_list:
+        placeholders = ",".join(["%s"] * len(fam_list))
+        where_parts.append(f"LEFT(UPPER(v.cod_articulo), 2) IN ({placeholders})")
+        params.extend(fam_list)
+    cod_filters: List[str] = []
+    for p in cod_prefix:
+        cod_filters.append("(UPPER(v.cod_articulo) LIKE %s OR UPPER(v.cod_base) LIKE %s)")
+        params.extend([f"{p}%", f"{p}%"])
+    for c in cod_contains:
+        cod_filters.append("(UPPER(v.cod_articulo) LIKE %s OR UPPER(v.cod_base) LIKE %s)")
+        params.extend([f"%{c}%", f"%{c}%"])
+    if cod_filters:
+        where_parts.append("(" + " OR ".join(cod_filters) + ")")
+
+    where_sql = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
 
     q_ventas = f"""
         SELECT
@@ -577,21 +645,45 @@ async def get_kpi_evolucion(sucursal: Optional[str] = None):
             EXTRACT(MONTH FROM fecha)::int AS mes_num,
             COALESCE(SUM(cantidad_venta), 0) AS ventas_unidades,
             COALESCE(SUM(importe), 0) AS ventas_importe
-        FROM ventas
+        FROM ventas v
         {where_sql}
         GROUP BY 1,2
         ORDER BY 1,2
     """
     df_v = pd.read_sql(q_ventas, conn, params=params)
 
-    filtro_hist = "AND sucursal = %s" if params else ""
-    filtro_hist_join = "WHERE h.sucursal = %s" if params else ""
+    hist_where_parts: List[str] = []
+    hist_params: List[str] = []
+    if suc_list:
+        placeholders = ",".join(["%s"] * len(suc_list))
+        hist_where_parts.append(f"h.sucursal IN ({placeholders})")
+        hist_params.extend(suc_list)
+    if fam_list:
+        placeholders = ",".join(["%s"] * len(fam_list))
+        hist_where_parts.append(f"LEFT(UPPER(h.cod_articulo), 2) IN ({placeholders})")
+        hist_params.extend(fam_list)
+    hist_cod_filters: List[str] = []
+    for p in cod_prefix:
+        hist_cod_filters.append("(UPPER(h.cod_articulo) LIKE %s OR UPPER(h.cod_base) LIKE %s)")
+        hist_params.extend([f"{p}%", f"{p}%"])
+    for c in cod_contains:
+        hist_cod_filters.append("(UPPER(h.cod_articulo) LIKE %s OR UPPER(h.cod_base) LIKE %s)")
+        hist_params.extend([f"%{c}%", f"%{c}%"])
+    if hist_cod_filters:
+        hist_where_parts.append("(" + " OR ".join(hist_cod_filters) + ")")
+
+    filtro_hist = ""
+    filtro_hist_join = ""
+    if hist_where_parts:
+        filtro_hist = "AND " + " AND ".join(hist_where_parts)
+        filtro_hist_join = "WHERE " + " AND ".join(hist_where_parts)
+
     q_stock_hist = f"""
         WITH ult_mes AS (
             SELECT
                 DATE_TRUNC('month', snapshot_ts) AS mes,
                 MAX(snapshot_ts) AS ts_ult
-            FROM saldo_historial
+            FROM saldo_historial h
             WHERE snapshot_ts IS NOT NULL
             {filtro_hist}
             GROUP BY 1
@@ -608,12 +700,28 @@ async def get_kpi_evolucion(sucursal: Optional[str] = None):
         ORDER BY 1,2
     """
     try:
-        hist_params: List[str] = []
-        if params:
-            hist_params = [params[0], params[0]]
-        df_s = pd.read_sql(q_stock_hist, conn, params=hist_params)
+        df_s = pd.read_sql(q_stock_hist, conn, params=hist_params + hist_params)
     except Exception:
-        fallback_filter = "AND sucursal = %s" if params else ""
+        fallback_parts: List[str] = []
+        fallback_params: List[str] = []
+        if suc_list:
+            placeholders = ",".join(["%s"] * len(suc_list))
+            fallback_parts.append(f"sucursal IN ({placeholders})")
+            fallback_params.extend(suc_list)
+        if fam_list:
+            placeholders = ",".join(["%s"] * len(fam_list))
+            fallback_parts.append(f"LEFT(UPPER(cod_articulo), 2) IN ({placeholders})")
+            fallback_params.extend(fam_list)
+        fallback_cod_filters: List[str] = []
+        for p in cod_prefix:
+            fallback_cod_filters.append("(UPPER(cod_articulo) LIKE %s OR UPPER(cod_base) LIKE %s)")
+            fallback_params.extend([f"{p}%", f"{p}%"])
+        for c in cod_contains:
+            fallback_cod_filters.append("(UPPER(cod_articulo) LIKE %s OR UPPER(cod_base) LIKE %s)")
+            fallback_params.extend([f"%{c}%", f"%{c}%"])
+        if fallback_cod_filters:
+            fallback_parts.append("(" + " OR ".join(fallback_cod_filters) + ")")
+        fallback_filter = f"AND {' AND '.join(fallback_parts)}" if fallback_parts else ""
         q_stock_fallback = f"""
             SELECT
                 EXTRACT(YEAR FROM sync_timestamp)::int AS anio,
@@ -625,7 +733,7 @@ async def get_kpi_evolucion(sucursal: Optional[str] = None):
             GROUP BY 1,2
             ORDER BY 1,2
         """
-        df_s = pd.read_sql(q_stock_fallback, conn, params=params)
+        df_s = pd.read_sql(q_stock_fallback, conn, params=fallback_params)
 
     conn.close()
 
@@ -640,13 +748,31 @@ async def get_kpi_evolucion(sucursal: Optional[str] = None):
     base = base.drop_duplicates()
     df_kpi = base.merge(df_v, on=["anio", "mes_num"], how="left")
     df_kpi = df_kpi.merge(df_s, on=["anio", "mes_num"], how="left")
-    for col in ["ventas_unidades", "ventas_importe", "stock_total"]:
+    for col in ["ventas_unidades", "ventas_importe"]:
         if col not in df_kpi.columns:
             df_kpi[col] = 0
         df_kpi[col] = pd.to_numeric(df_kpi[col], errors="coerce").fillna(0.0)
 
+    if "stock_total" not in df_kpi.columns:
+        df_kpi["stock_total"] = None
+    else:
+        df_kpi["stock_total"] = pd.to_numeric(df_kpi["stock_total"], errors="coerce")
+
     df_kpi = df_kpi.sort_values(["anio", "mes_num"])
-    return {"rows": df_kpi.to_dict(orient="records")}
+    df_kpi = df_kpi.where(pd.notnull(df_kpi), None)
+
+    stock_hist = {"meses": 0}
+    if not df_s.empty:
+        df_s = df_s.sort_values(["anio", "mes_num"])
+        first = df_s.iloc[0]
+        last = df_s.iloc[-1]
+        stock_hist = {
+            "meses": int(df_s[["anio", "mes_num"]].drop_duplicates().shape[0]),
+            "desde": f"{int(first.mes_num):02d}-{int(first.anio)}",
+            "hasta": f"{int(last.mes_num):02d}-{int(last.anio)}",
+        }
+
+    return {"rows": df_kpi.to_dict(orient="records"), "stock_hist": stock_hist}
 
 # ============== ENDPOINTS DE COSTOS ==============
 

@@ -1059,6 +1059,7 @@ def get_matriz_distribucion(
         dias_proyeccion,
         dias_proyeccion,
         dias_proyeccion,
+        dias_proyeccion,
     ]
 
     if alertas and len(alertas) > 0:
@@ -1082,6 +1083,26 @@ def get_matriz_distribucion(
         query += f" AND LEFT(UPPER(cod_articulo), 2) IN ({placeholders})"
         params.extend([str(x).strip().upper() for x in prefijos_familia if str(x).strip()])
 
+    cod_filters = []
+    if codigos_prefix and len(codigos_prefix) > 0:
+        for p in codigos_prefix:
+            p = str(p).strip().upper()
+            if not p:
+                continue
+            cod_filters.append("(UPPER(cod_articulo) LIKE %s OR UPPER(cod_base) LIKE %s)")
+            params.extend([f"{p}%", f"{p}%"])
+
+    if codigos_contains and len(codigos_contains) > 0:
+        for c in codigos_contains:
+            c = str(c).strip().upper()
+            if not c:
+                continue
+            cod_filters.append("(UPPER(cod_articulo) LIKE %s OR UPPER(cod_base) LIKE %s)")
+            params.extend([f"%{c}%", f"%{c}%"])
+
+    if cod_filters:
+        query += " AND (" + " OR ".join(cod_filters) + ")"
+
     query += " ORDER BY cod_base, cod_articulo, sucursal"
 
     cur.execute(query, params)
@@ -1098,14 +1119,31 @@ def get_matriz_distribucion(
     
     return datos
 
-def get_sugerencia_distribucion(dias_proyeccion: int = 30, familias: Optional[List] = None):
+def get_sugerencia_distribucion(
+    dias_proyeccion: int = 30,
+    familias: Optional[List] = None,
+    limit: int = 200,
+    sucursales: Optional[List] = None,
+    prefijos_familia: Optional[List] = None,
+    codigos_prefix: Optional[List] = None,
+    codigos_contains: Optional[List] = None,
+    alertas: Optional[List] = None,
+    solo_sugeridos: Optional[bool] = True,
+    lista_precio: Optional[str] = None,
+):
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
     start_date = datetime.now().date() - timedelta(days=dias_proyeccion - 1)
     end_date = datetime.now().date()
 
-    query = """
+    price_filter = ""
+    price_params: List = []
+    if lista_precio:
+        price_filter = "WHERE nro_lista = %s OR nombre_lista ILIKE %s"
+        price_params = [lista_precio, f"%{lista_precio}%"]
+
+    query = f"""
         WITH ventas_p AS (
             SELECT cod_articulo, sucursal, SUM(cantidad_venta) AS ventas_periodo
             FROM ventas
@@ -1124,8 +1162,35 @@ def get_sugerencia_distribucion(dias_proyeccion: int = 30, familias: Optional[Li
             UNION
             SELECT cod_articulo, sucursal FROM ventas_p
         ),
+        cdd AS (
+            SELECT cod_articulo, SUM(stock_1) AS stock_cdd
+            FROM saldo
+            WHERE sucursal = 'CRISA CENTRAL'
+              AND (
+                RIGHT(COALESCE(cod_deposito, ''), 2) IN ('01','30')
+                OR RIGHT(COALESCE(deposito, ''), 2) IN ('01','30')
+              )
+            GROUP BY 1
+        ),
+        precio_u AS (
+            SELECT DISTINCT ON (cod_articulo)
+                cod_articulo,
+                precio,
+                nro_lista,
+                nombre_lista,
+                fecha_modificacion,
+                sync_timestamp
+            FROM precios
+            {price_filter}
+            ORDER BY cod_articulo, fecha_modificacion DESC NULLS LAST, sync_timestamp DESC
+        ),
+        costo_u AS (
+            SELECT cod_articulo, costo_reposicion
+            FROM costos
+        ),
         calc AS (
             SELECT
+                COALESCE(a.cod_base, b.cod_articulo) AS cod_base,
                 b.sucursal,
                 b.cod_articulo,
                 COALESCE(s.stock_sucursal, 0) AS stock_sucursal,
@@ -1148,28 +1213,55 @@ def get_sugerencia_distribucion(dias_proyeccion: int = 30, familias: Optional[Li
                     WHEN (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo, 0) / %s) * 30, 0)) >= 4 THEN 'Sobrestock'
                     ELSE 'OK'
                 END AS alerta_stock,
+                COALESCE(cdd.stock_cdd, 0) AS stock_cdd,
+                COALESCE(p.precio, 0) AS precio_unitario,
+                COALESCE(c.costo_reposicion, 0) AS costo_unitario,
                 COALESCE(s.familia, '') AS familia
             FROM base b
             LEFT JOIN stock_s s ON s.cod_articulo = b.cod_articulo AND s.sucursal = b.sucursal
             LEFT JOIN ventas_p v ON v.cod_articulo = b.cod_articulo AND v.sucursal = b.sucursal
+            LEFT JOIN articulos a ON a.cod_articulo = b.cod_articulo
+            LEFT JOIN cdd ON cdd.cod_articulo = b.cod_articulo
+            LEFT JOIN precio_u p ON p.cod_articulo = b.cod_articulo
+            LEFT JOIN costo_u c ON c.cod_articulo = b.cod_articulo
         )
         SELECT
             sucursal,
+            cod_base,
             cod_articulo,
             stock_sucursal,
+            stock_cdd,
             ventas_periodo,
             venta_promedio_diaria,
             meses_stock,
+            CASE
+                WHEN venta_promedio_diaria = 0 THEN NULL
+                ELSE stock_sucursal / NULLIF(venta_promedio_diaria, 0)
+            END AS cobertura_dias,
             alerta_stock,
+            CASE
+                WHEN ventas_periodo = 0 THEN 'Sin rotacion'
+                WHEN meses_stock < 1 THEN 'Critica'
+                WHEN meses_stock < 2 THEN 'Alta'
+                WHEN meses_stock < 3 THEN 'Media'
+                WHEN meses_stock < 4 THEN 'OK'
+                ELSE 'Sobrestock'
+            END AS prioridad,
+            precio_unitario,
+            costo_unitario,
             necesidad,
-            GREATEST(necesidad, 0) AS sugerencia_distribuir
+            GREATEST(necesidad, 0) AS sugerencia_distribuir,
+            (GREATEST(necesidad, 0) * precio_unitario) AS valor_reponer_venta,
+            (GREATEST(necesidad, 0) * costo_unitario) AS valor_reponer_costo,
+            (GREATEST(necesidad, 0) * precio_unitario) - (GREATEST(necesidad, 0) * costo_unitario) AS margen_estimado
         FROM calc
         WHERE 1=1
     """
 
-    params = [
-        start_date,
-        end_date,
+    params: List = [start_date, end_date]
+    if price_params:
+        params.extend(price_params)
+    params.extend([
         dias_proyeccion,
         dias_proyeccion,
         dias_proyeccion,
@@ -1179,14 +1271,52 @@ def get_sugerencia_distribucion(dias_proyeccion: int = 30, familias: Optional[Li
         dias_proyeccion,
         dias_proyeccion,
         dias_proyeccion,
-    ]
+        dias_proyeccion,
+    ])
 
-    if familias and len(familias) > 0:
-        placeholders = ','.join(['%s'] * len(familias))
+    if alertas and len(alertas) > 0:
+        placeholders = ','.join(['%s'] * len(alertas))
+        query += f" AND alerta_stock IN ({placeholders})"
+        params.extend(alertas)
+
+    if sucursales and len(sucursales) > 0:
+        placeholders = ','.join(['%s'] * len(sucursales))
+        query += f" AND sucursal IN ({placeholders})"
+        params.extend(list(sucursales))
+
+    familias_uso = prefijos_familia if prefijos_familia else familias
+    if familias_uso and len(familias_uso) > 0:
+        placeholders = ','.join(['%s'] * len(familias_uso))
         query += f" AND LEFT(UPPER(cod_articulo), 2) IN ({placeholders})"
-        params.extend([str(x).strip().upper() for x in familias if str(x).strip()])
+        params.extend([str(x).strip().upper() for x in familias_uso if str(x).strip()])
 
-    query += " ORDER BY sucursal, cod_articulo"
+    cod_filters = []
+    if codigos_prefix and len(codigos_prefix) > 0:
+        for p in codigos_prefix:
+            p = str(p).strip().upper()
+            if not p:
+                continue
+            cod_filters.append("(UPPER(cod_articulo) LIKE %s OR UPPER(cod_base) LIKE %s)")
+            params.extend([f"{p}%", f"{p}%"])
+
+    if codigos_contains and len(codigos_contains) > 0:
+        for c in codigos_contains:
+            c = str(c).strip().upper()
+            if not c:
+                continue
+            cod_filters.append("(UPPER(cod_articulo) LIKE %s OR UPPER(cod_base) LIKE %s)")
+            params.extend([f"%{c}%", f"%{c}%"])
+
+    if cod_filters:
+        query += " AND (" + " OR ".join(cod_filters) + ")"
+
+    if solo_sugeridos:
+        query += " AND necesidad > 0"
+
+    query += " ORDER BY sugerencia_distribuir DESC, necesidad DESC, sucursal, cod_articulo"
+    if limit and limit > 0:
+        query += " LIMIT %s"
+        params.append(int(limit))
 
     cur.execute(query, params)
     results = cur.fetchall()
