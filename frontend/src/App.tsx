@@ -1,15 +1,6 @@
 ﻿import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-  BarChart,
-  Bar,
-} from 'recharts'
+
+type RechartsModule = typeof import('recharts')
 
 const defaultApiBase =
   typeof window !== 'undefined'
@@ -257,6 +248,7 @@ export default function App() {
   const [kpiFamiliasLoading, setKpiFamiliasLoading] = useState<boolean>(false)
   const [kpiFamiliasError, setKpiFamiliasError] = useState<string>('')
   const [kpiFocus, setKpiFocus] = useState<boolean>(false)
+  const [rechartsMod, setRechartsMod] = useState<RechartsModule | null>(null)
   const [sortCol, setSortCol] = useState<string>('CRISA CENTRAL')
   const [sortDesc, setSortDesc] = useState<boolean>(true)
   const [logoOk, setLogoOk] = useState<boolean>(true)
@@ -300,6 +292,19 @@ export default function App() {
       .then((d) => setSucursales(d.sucursales || []))
       .catch(() => setSucursales([]))
   }, [])
+
+  useEffect(() => {
+    if (tab !== 'kpi' || rechartsMod) return
+    let active = true
+    import('recharts')
+      .then((mod) => {
+        if (active) setRechartsMod(mod)
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [tab, rechartsMod])
 
   const queryMatrixRaw = useMemo(() => {
     const params = new URLSearchParams()
@@ -818,6 +823,8 @@ export default function App() {
     syncInfo?.ultima_sync_costos ||
     'Sin datos'
 
+  const Recharts = rechartsMod
+
   const totalVentas = kpi.reduce((acc, r) => acc + (r.ventas_unidades || 0), 0)
   const totalImporte = kpi.reduce((acc, r) => acc + (r.ventas_importe || 0), 0)
   const totalStock = kpi.reduce((acc, r) => acc + (r.stock_total || 0), 0)
@@ -1333,6 +1340,11 @@ export default function App() {
               <div className="empty error">Error al cargar datos: {kpiError}</div>
             ) : kpiChart.length === 0 ? (
               <div className="empty">Sin datos de KPI para mostrar.</div>
+            ) : !Recharts ? (
+              <div className="overlay-loading">
+                <div className="spinner"></div>
+                <div className="overlay-text">Cargando gráficos...</div>
+              </div>
             ) : (
               <div className="chart-card">
                 <div className="chart-head">
@@ -1340,16 +1352,16 @@ export default function App() {
                   <button className="focus-btn" type="button" onClick={() => setKpiFocus(true)}>Modo enfoque</button>
                 </div>
                 <div className="chart-body">
-                  <ResponsiveContainer width="100%" height={300}>
-                    <LineChart data={kpiChart}>
-                      <XAxis dataKey="mes" />
-                      <YAxis />
-                      <Tooltip />
-                      <Legend />
-                      <Line type="monotone" dataKey="ventas_unidades" name="Ventas (u)" stroke="#0f766e" strokeWidth={2} />
-                      <Line type="monotone" dataKey="stock_total" name="Stock" stroke="#f97316" strokeWidth={2} connectNulls={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
+                  <Recharts.ResponsiveContainer width="100%" height={300}>
+                    <Recharts.LineChart data={kpiChart}>
+                      <Recharts.XAxis dataKey="mes" />
+                      <Recharts.YAxis />
+                      <Recharts.Tooltip />
+                      <Recharts.Legend />
+                      <Recharts.Line type="monotone" dataKey="ventas_unidades" name="Ventas (u)" stroke="#0f766e" strokeWidth={2} />
+                      <Recharts.Line type="monotone" dataKey="stock_total" name="Stock" stroke="#f97316" strokeWidth={2} connectNulls={false} />
+                    </Recharts.LineChart>
+                  </Recharts.ResponsiveContainer>
                 </div>
               </div>
             )}
@@ -1376,11 +1388,16 @@ export default function App() {
               <div className="empty error">Error al cargar familias: {kpiFamiliasError}</div>
             ) : kpiFamiliasChart.length === 0 ? (
               <div className="empty">Sin datos para familias.</div>
+            ) : !Recharts ? (
+              <div className="overlay-loading">
+                <div className="spinner"></div>
+                <div className="overlay-text">Cargando gráficos...</div>
+              </div>
             ) : (
-              <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={kpiFamiliasChart} layout="vertical" margin={{ left: 10, right: 20 }}>
-                  <XAxis type="number" tickFormatter={(v) => formatMoney(Number(v))} />
-                  <YAxis
+              <Recharts.ResponsiveContainer width="100%" height={260}>
+                <Recharts.BarChart data={kpiFamiliasChart} layout="vertical" margin={{ left: 10, right: 20 }}>
+                  <Recharts.XAxis type="number" tickFormatter={(v) => formatMoney(Number(v))} />
+                  <Recharts.YAxis
                     type="category"
                     dataKey="familia"
                     width={120}
@@ -1389,10 +1406,10 @@ export default function App() {
                       return label.length > 16 ? `${label.slice(0, 16)}...` : label
                     }}
                   />
-                  <Tooltip formatter={(v: any) => formatMoney(Number(v))} />
-                  <Bar dataKey="monto" fill="#f97316" radius={[4, 4, 4, 4]} />
-                </BarChart>
-              </ResponsiveContainer>
+                  <Recharts.Tooltip formatter={(v: any) => formatMoney(Number(v))} />
+                  <Recharts.Bar dataKey="monto" fill="#f97316" radius={[4, 4, 4, 4]} />
+                </Recharts.BarChart>
+              </Recharts.ResponsiveContainer>
             )}
           </div>
 
@@ -1411,17 +1428,22 @@ export default function App() {
                     </div>
                   ) : kpiError ? (
                     <div className="empty error">Error al cargar datos: {kpiError}</div>
+                  ) : !Recharts ? (
+                    <div className="overlay-loading">
+                      <div className="spinner"></div>
+                      <div className="overlay-text">Cargando gráficos...</div>
+                    </div>
                   ) : (
-                    <ResponsiveContainer width="100%" height={520}>
-                      <LineChart data={kpiChart}>
-                        <XAxis dataKey="mes" />
-                        <YAxis />
-                        <Tooltip />
-                        <Legend />
-                        <Line type="monotone" dataKey="ventas_unidades" name="Ventas (u)" stroke="#0f766e" strokeWidth={2} />
-                        <Line type="monotone" dataKey="stock_total" name="Stock" stroke="#f97316" strokeWidth={2} connectNulls={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
+                    <Recharts.ResponsiveContainer width="100%" height={520}>
+                      <Recharts.LineChart data={kpiChart}>
+                        <Recharts.XAxis dataKey="mes" />
+                        <Recharts.YAxis />
+                        <Recharts.Tooltip />
+                        <Recharts.Legend />
+                        <Recharts.Line type="monotone" dataKey="ventas_unidades" name="Ventas (u)" stroke="#0f766e" strokeWidth={2} />
+                        <Recharts.Line type="monotone" dataKey="stock_total" name="Stock" stroke="#f97316" strokeWidth={2} connectNulls={false} />
+                      </Recharts.LineChart>
+                    </Recharts.ResponsiveContainer>
                   )}
                 </div>
               </div>
@@ -1432,6 +1454,8 @@ export default function App() {
     </div>
   )
 }
+
+
 
 
 
