@@ -1,8 +1,10 @@
-import os
+﻿import os
 import logging
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
+from decimal import Decimal
+import math
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
@@ -13,12 +15,22 @@ import database as db
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("api")
 
-# Asegurar estructura de base al iniciar servicio API
-try:
-    db.init_database()
-except Exception as e:
-    logger.warning(f"No se pudo inicializar estructura de base: {e}")
+# Asegurar estructura de base al iniciar servicio API (sin bloquear el arranque)
 app = FastAPI(title="Sistema de Análisis Comercial")
+
+import threading
+
+
+def _init_db_async():
+    try:
+        db.init_database()
+    except Exception as e:
+        logger.warning(f"No se pudo inicializar estructura de base: {e}")
+
+
+@app.on_event("startup")
+def startup_init_db():
+    threading.Thread(target=_init_db_async, daemon=True).start()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -27,7 +39,9 @@ app.add_middleware(
         "http://0.0.0.0:5173",
         "http://localhost:5000",
         "http://127.0.0.1:5000",
+        "https://frontend-ny3cdjm4n-leonardoreyesarg79-gmailcoms-projects.vercel.app",
     ],
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -48,25 +62,25 @@ def normalize_saldo_columns(records: List[dict]) -> List[dict]:
     normalized = []
     for r in records:
         stock_val = r.get("Stock 1", r.get("stock_1", 0))
-        # Buscar cod_articulo en múltiples formatos posibles
+        # Buscar cod_articulo en mÃºltiples formatos posibles
         cod_art = r.get("Cod. Articulo", r.get("Cód. Artículo", r.get("Cod. base / articulo", 
                   r.get("Cód. base / artículo", r.get("cod_articulo", "")))))
         cod_base = r.get("Cod. base / articulo", r.get("Cód. base / artículo", r.get("cod_base", "")))
-        desc_base = r.get("Desc. Base / Articulo", r.get("Desc. Base / Artículo", r.get("desc_base", "")))
-        sinonimo = r.get("Sinonimo", r.get("Sinónimo", r.get("sinonimo", "")))
-        cod_dep = r.get("Cod. Deposito", r.get("Cód. Depósito", r.get("cod_deposito", "")))
+        desc_base = r.get("Desc. Base / Articulo", r.get("Desc. Base / ArtÃ­culo", r.get("desc_base", "")))
+        sinonimo = r.get("Sinonimo", r.get("SinÃ³nimo", r.get("sinonimo", "")))
+        cod_dep = r.get("Cod. Deposito", r.get("CÃ³d. DepÃ³sito", r.get("cod_deposito", "")))
         normalized.append({
             "cod_articulo": str(cod_art) if cod_art else "",
-            "descripcion": str(r.get("Articulo", r.get("Artículo", r.get("Desc. Base / Articulo", 
-                           r.get("Desc. Base / Artículo", r.get("descripcion", "")))))),
+            "descripcion": str(r.get("Articulo", r.get("ArtÃ­culo", r.get("Desc. Base / Articulo", 
+                           r.get("Desc. Base / ArtÃ­culo", r.get("descripcion", "")))))),
             "sinonimo": str(sinonimo) if sinonimo else "",
             "cod_base": str(cod_base) if cod_base else "",
             "desc_base": str(desc_base) if desc_base else "",
             "sucursal": str(r.get("Sucursal", r.get("sucursal", ""))),
             "nro_sucursal": r.get("Nro. Sucursal", r.get("nro_sucursal", 0)),
-            "deposito": str(r.get("Deposito", r.get("Depósito", r.get("deposito", "")))),
+            "deposito": str(r.get("Deposito", r.get("DepÃ³sito", r.get("deposito", "")))),
             "cod_deposito": str(cod_dep) if cod_dep else "",
-            "familia": str(r.get("Cod. escala 1", r.get("Cód. escala 1", r.get("familia", "")))),
+            "familia": str(r.get("Cod. escala 1", r.get("CÃ³d. escala 1", r.get("familia", "")))),
             "desc_familia": str(r.get("Desc. escala 1", r.get("desc_familia", ""))),
             "um_stock": str(r.get("U.M. stock", r.get("um_stock", ""))),
             "stock_1": float(stock_val) if stock_val is not None else 0.0
@@ -78,14 +92,14 @@ def normalize_ventas_columns(records: List[dict]) -> List[dict]:
     for r in records:
         cant_val = r.get("Cantidad venta", r.get("cantidad_venta", 0))
         imp_val = r.get("Imp. prop. c/IVA", r.get("importe", 0))
-        # Buscar cod_articulo en múltiples formatos
+        # Buscar cod_articulo en mÃºltiples formatos
         cod_art = r.get("Cod. Articulo", r.get("Cód. Artículo", r.get("cod_articulo", "")))
         cod_base = r.get("Cod. base / articulo", r.get("Cód. base / artículo", r.get("cod_base", "")))
-        desc_base = r.get("Desc. Base / Articulo", r.get("Desc. Base / Artículo", r.get("desc_base", "")))
-        sinonimo = r.get("Sinonimo", r.get("Sinónimo", r.get("sinonimo", "")))
+        desc_base = r.get("Desc. Base / Articulo", r.get("Desc. Base / ArtÃ­culo", r.get("desc_base", "")))
+        sinonimo = r.get("Sinonimo", r.get("SinÃ³nimo", r.get("sinonimo", "")))
         normalized.append({
             "cod_articulo": str(cod_art) if cod_art else "",
-            "descripcion": str(r.get("Descripcion", r.get("Descripción", r.get("descripcion", "")))),
+            "descripcion": str(r.get("Descripcion", r.get("DescripciÃ³n", r.get("descripcion", "")))),
             "sinonimo": str(sinonimo) if sinonimo else "",
             "cod_base": str(cod_base) if cod_base else "",
             "desc_base": str(desc_base) if desc_base else "",
@@ -94,8 +108,8 @@ def normalize_ventas_columns(records: List[dict]) -> List[dict]:
             "fecha": str(r.get("Fecha", r.get("fecha", ""))),
             "cantidad_venta": float(cant_val) if cant_val is not None else 0.0,
             "importe": float(imp_val) if imp_val is not None else 0.0,
-            "familia": str(r.get("Cod. Familia (Articulo)", r.get("Cód. Familia (Artículo)", r.get("familia", "")))),
-            "desc_familia": str(r.get("Descripcion Familia (Articulo)", r.get("Descripción Familia (Artículo)", r.get("desc_familia", "")))),
+            "familia": str(r.get("Cod. Familia (Articulo)", r.get("CÃ³d. Familia (ArtÃ­culo)", r.get("familia", "")))),
+            "desc_familia": str(r.get("Descripcion Familia (Articulo)", r.get("DescripciÃ³n Familia (ArtÃ­culo)", r.get("desc_familia", "")))),
             "um_stock": str(r.get("U.M. stock", r.get("um_stock", ""))),
             "unidad_normalizada": str(r.get("Unidad Normalizada", r.get("unidad_normalizada", ""))),
             "rubro_macro": str(r.get("Rubro Macro", r.get("rubro_macro", ""))),
@@ -109,18 +123,18 @@ def normalize_precios_columns(records: List[dict]) -> List[dict]:
     normalized = []
     for r in records:
         precio_val = r.get("Precio", r.get("precio", 0))
-        # Buscar cod_articulo en múltiples formatos
+        # Buscar cod_articulo en mÃºltiples formatos
         cod_art = r.get("Cod. Articulo", r.get("Cód. Artículo", r.get("cod_articulo", "")))
         normalized.append({
             "cod_articulo": str(cod_art) if cod_art else "",
-            "descripcion": str(r.get("Descripcion", r.get("Descripción", r.get("descripcion", "")))),
-            "sinonimo": str(r.get("Sinonimo", r.get("Sinónimo", r.get("sinonimo", "")))),
-            "cod_familia": str(r.get("Cod. familia", r.get("Cód. familia", r.get("cod_familia", "")))),
+            "descripcion": str(r.get("Descripcion", r.get("DescripciÃ³n", r.get("descripcion", "")))),
+            "sinonimo": str(r.get("Sinonimo", r.get("SinÃ³nimo", r.get("sinonimo", "")))),
+            "cod_familia": str(r.get("Cod. familia", r.get("CÃ³d. familia", r.get("cod_familia", "")))),
             "familia": str(r.get("Familia", r.get("familia", ""))),
             "precio": float(precio_val) if precio_val is not None else 0.0,
-            "nro_lista": str(r.get("Cod. Lista de Precios", r.get("Cód. Lista de Precios", r.get("nro_lista", "")))),
+            "nro_lista": str(r.get("Cod. Lista de Precios", r.get("CÃ³d. Lista de Precios", r.get("nro_lista", "")))),
             "nombre_lista": str(r.get("Lista de precios", r.get("nombre_lista", ""))),
-            "fecha_modificacion": str(r.get("Fecha de ultima modificacion", r.get("Fecha de última modificación", r.get("fecha_modificacion", ""))))
+            "fecha_modificacion": str(r.get("Fecha de ultima modificacion", r.get("Fecha de Ãºltima modificaciÃ³n", r.get("fecha_modificacion", ""))))
         })
     return normalized
 
@@ -131,7 +145,7 @@ def normalize_costos_columns(records: List[dict]) -> List[dict]:
         cod_art = r.get("Cod. Articulo", r.get("Cód. Artículo", r.get("cod_articulo", "")))
         normalized.append({
             "cod_articulo": str(cod_art) if cod_art else "",
-            "descripcion": str(r.get("Descripcion", r.get("Descripción", r.get("descripcion", "")))),
+            "descripcion": str(r.get("Descripcion", r.get("DescripciÃ³n", r.get("descripcion", "")))),
             "costo_reposicion": float(costo_val) if costo_val is not None else 0.0,
             "moneda": "ARS"
         })
@@ -142,15 +156,15 @@ def normalize_articulos_columns(records: List[dict]) -> List[dict]:
     for r in records:
         normalized.append({
             "cod_articulo": str(r.get("Cod. Articulo", r.get("Cód. Artículo", r.get("cod_articulo", "")))),
-            "descripcion": str(r.get("Descripcion", r.get("Descripción", r.get("descripcion", "")))),
+            "descripcion": str(r.get("Descripcion", r.get("DescripciÃ³n", r.get("descripcion", "")))),
             "desc_adicional": str(r.get("Desc. Adicional", r.get("desc_adicional", ""))),
-            "sinonimo": str(r.get("Sinonimo", r.get("Sinónimo", r.get("sinonimo", "")))),
+            "sinonimo": str(r.get("Sinonimo", r.get("SinÃ³nimo", r.get("sinonimo", "")))),
             "cod_base": str(r.get("Cod. base / articulo", r.get("Cód. base / artículo", r.get("cod_base", "")))),
-            "desc_base": str(r.get("Desc. Articulo Base", r.get("Desc. Artículo Base", r.get("desc_base", "")))),
+            "desc_base": str(r.get("Desc. Articulo Base", r.get("Desc. ArtÃ­culo Base", r.get("desc_base", "")))),
             "familia": str(r.get("Familia", r.get("familia", ""))),
-            "cod_agrupacion": str(r.get("Cod. agrupacion", r.get("Cód. agrupación", r.get("cod_agrupacion", "")))),
-            "desc_agrupacion": str(r.get("Desc. agrupacion", r.get("Desc. agrupación", r.get("desc_agrupacion", "")))),
-            "codigo_barra": str(r.get("Codigo de Barras", r.get("Código de Barras", r.get("codigo_barra", "")))),
+            "cod_agrupacion": str(r.get("Cod. agrupacion", r.get("CÃ³d. agrupaciÃ³n", r.get("cod_agrupacion", "")))),
+            "desc_agrupacion": str(r.get("Desc. agrupacion", r.get("Desc. agrupaciÃ³n", r.get("desc_agrupacion", "")))),
+            "codigo_barra": str(r.get("Codigo de Barras", r.get("CÃ³digo de Barras", r.get("codigo_barra", "")))),
             "fecha_alta": r.get("Fecha de alta", r.get("fecha_alta")),
             "um_stock": str(r.get("U.M. stock", r.get("um_stock", ""))),
             "lleva_stock": str(r.get("Lleva stock asociado", r.get("lleva_stock", ""))),
@@ -160,8 +174,8 @@ def normalize_articulos_columns(records: List[dict]) -> List[dict]:
 
 def calcular_metricas(df_saldo: pd.DataFrame, df_ventas: pd.DataFrame) -> pd.DataFrame:
     """
-    Calcula métricas de stock usando lógica de Power BI:
-    - Prox 3 meses (AA): Ventas del mismo período de 3 meses del año anterior
+    Calcula mÃ©tricas de stock usando lÃ³gica de Power BI:
+    - Prox 3 meses (AA): Ventas del mismo perÃ­odo de 3 meses del aÃ±o anterior
     - Promedio mensual (COEF): MAX(venta_AA/3, venta_actual/3)
     - Meses de stock: Stock / CoefMensual
     """
@@ -246,7 +260,7 @@ def calcular_metricas(df_saldo: pd.DataFrame, df_ventas: pd.DataFrame) -> pd.Dat
             import math
             df_resultado["pedido"] = df_resultado["necesidad"].apply(lambda x: max(0, math.ceil(x)) if x > 0 else 0)
 
-            # Venta de referencia: AA análisis si existe, si no actual
+            # Venta de referencia: AA anÃ¡lisis si existe, si no actual
             df_resultado["venta_ref"] = df_resultado.apply(
                 lambda r: r["vta_aa_analisis"] if r["vta_aa_analisis"] > 0 else r["vta_actual"],
                 axis=1
@@ -274,19 +288,19 @@ def calcular_metricas(df_saldo: pd.DataFrame, df_ventas: pd.DataFrame) -> pd.Dat
             return ""
 
         if meses_stock == 0 and ventas_actual == 0:
-            return "🟠 Sin rotación"
+            return "ðŸŸ  Sin rotaciÃ³n"
         if meses_stock < 1 and ventas_actual > 1:
-            return "⚠️ Quiebre de stock"
+            return "âš ï¸ Quiebre de stock"
         if meses_stock >= 1 and meses_stock < 2:
-            return "❗ Stock de Seguridad"
+            return "â— Stock de Seguridad"
         if meses_stock >= 2 and meses_stock < 3:
-            return "📍 Pto de Pedido"
+            return "ðŸ“ Pto de Pedido"
         if meses_stock >= 3 and meses_stock < 4:
-            return "✅ OK"
+            return "âœ… OK"
         if meses_stock >= 4 and ventas_actual == 0:
-            return "🟠 Sin rotación"
+            return "ðŸŸ  Sin rotaciÃ³n"
         if meses_stock >= 4:
-            return "📦 Sobrestock"
+            return "ðŸ“¦ Sobrestock"
         return ""
     
     df_resultado["alerta_stock"] = df_resultado.apply(determinar_alerta, axis=1)
@@ -305,7 +319,7 @@ async def sync_data(data: SyncData):
             db.clear_tables()
             return {"status": "ok", "message": "Tablas limpiadas"}
         
-        # Comando para calcular métricas
+        # Comando para calcular mÃ©tricas
         if data.calculate_metrics:
             saldo_records = db.get_all_saldo()
             ventas_records = db.get_all_ventas()
@@ -318,11 +332,11 @@ async def sync_data(data: SyncData):
             
             db.clear_metricas()
             db.insert_metricas(metricas_records, timestamp)
-            db.log_sync(len(saldo_records), len(ventas_records), len(metricas_records), "ok", "Métricas calculadas")
+            db.log_sync(len(saldo_records), len(ventas_records), len(metricas_records), "ok", "MÃ©tricas calculadas")
             
             return {
                 "status": "ok",
-                "message": f"Métricas calculadas: {len(metricas_records)} registros",
+                "message": f"MÃ©tricas calculadas: {len(metricas_records)} registros",
                 "registros": len(metricas_records)
             }
         
@@ -336,7 +350,7 @@ async def sync_data(data: SyncData):
             else:
                 db.insert_saldo(saldo_norm, timestamp)
                 inserted["saldo"] = len(saldo_norm)
-            # Guardar snapshot histórico para KPI de evolución real de stock
+            # Guardar snapshot histÃ³rico para KPI de evoluciÃ³n real de stock
             db.insert_saldo_historial_snapshot(saldo_norm, timestamp)
         
         if data.ventas:
@@ -350,7 +364,7 @@ async def sync_data(data: SyncData):
         if data.articulos:
             articulos_norm = normalize_articulos_columns(data.articulos)
             inserted["articulos"] = db.upsert_articulos(articulos_norm, timestamp)
-            # Regenerar categorías a partir de nómina actual
+            # Regenerar categorÃ­as a partir de nÃ³mina actual
             if inserted["articulos"] > 0:
                 db.refresh_categorias_from_articulos()
         
@@ -438,18 +452,18 @@ def _parse_csv_param(value: Optional[str]) -> List[str]:
 
 def _expand_alertas(alertas: List[str]) -> List[str]:
     mapping = {
-        "Quiebre de stock": ["⚠️ Quiebre de stock", "Quiebre de stock"],
-        "⚠️ Quiebre de stock": ["⚠️ Quiebre de stock", "Quiebre de stock"],
-        "Stock de Seguridad": ["❗ Stock de Seguridad", "Stock de Seguridad"],
-        "❗ Stock de Seguridad": ["❗ Stock de Seguridad", "Stock de Seguridad"],
-        "Pto de Pedido": ["📍 Pto de Pedido", "Pto de Pedido"],
-        "📍 Pto de Pedido": ["📍 Pto de Pedido", "Pto de Pedido"],
-        "Sobrestock": ["📦 Sobrestock", "Sobrestock", "Sobre stock"],
-        "📦 Sobrestock": ["📦 Sobrestock", "Sobrestock", "Sobre stock"],
-        "Sin rotación": ["🟠 Sin rotación", "Sin rotación (sin stock)", "Sin rotación (con sobrestock)", "Sin rotación"],
-        "🟠 Sin rotación": ["🟠 Sin rotación", "Sin rotación (sin stock)", "Sin rotación (con sobrestock)", "Sin rotación"],
-        "OK": ["✅ OK", "OK"],
-        "✅ OK": ["✅ OK", "OK"],
+        "Quiebre de stock": ["?? Quiebre de stock", "Quiebre de stock"],
+        "?? Quiebre de stock": ["?? Quiebre de stock", "Quiebre de stock"],
+        "Stock de Seguridad": ["? Stock de Seguridad", "Stock de Seguridad"],
+        "? Stock de Seguridad": ["? Stock de Seguridad", "Stock de Seguridad"],
+        "Pto de Pedido": ["?? Pto de Pedido", "Pto de Pedido"],
+        "?? Pto de Pedido": ["?? Pto de Pedido", "Pto de Pedido"],
+        "Sobrestock": ["?? Sobrestock", "Sobrestock", "Sobre stock"],
+        "?? Sobrestock": ["?? Sobrestock", "Sobrestock", "Sobre stock"],
+        "Sin rotación": ["?? Sin rotación", "Sin rotación (sin stock)", "Sin rotación (con sobrestock)", "Sin rotación"],
+        "?? Sin rotación": ["?? Sin rotación", "Sin rotación (sin stock)", "Sin rotación (con sobrestock)", "Sin rotación"],
+        "OK": ["? OK", "OK"],
+        "? OK": ["? OK", "OK"],
     }
     result: List[str] = []
     for alerta in alertas:
@@ -539,7 +553,7 @@ async def get_matriz_distribucion(
     # Orden default: CRISA CENTRAL desc (si existe), si no Total, sino primera numérica
     sort_col = "CRISA CENTRAL" if "CRISA CENTRAL" in piv.columns else ("Total" if "Total" in piv.columns else None)
     if not sort_col:
-        skip_cols = {"Cód. base / artículo", "Cód. Artículo", "CÃ³d. base / artÃ­culo", "CÃ³d. ArtÃ­culo"}
+        skip_cols = {"Cód. base / artículo", "Cód. Artículo", "Cód. base / artículo", "Cód. Artículo"}
         for c in piv.columns:
             if c not in skip_cols:
                 sort_col = c
@@ -608,191 +622,275 @@ async def get_kpi_evolucion(
     familias: Optional[str] = None,
     codigos: Optional[str] = None,
 ):
-    conn = db.get_connection()
+    conn = None
+    try:
+        conn = db.get_connection()
+        suc_list = _parse_csv_param(sucursales)
+        if sucursal and sucursal != "Todas" and sucursal not in suc_list:
+            suc_list.append(sucursal)
+        fam_list = [f.upper() for f in _parse_csv_param(familias)]
+        cod_list = [c.upper() for c in _parse_csv_param(codigos)]
+        cod_prefix = [c[:-1] for c in cod_list if c.endswith("*")]
+        cod_contains = [c for c in cod_list if not c.endswith("*")]
+
+        params: List[str] = []
+        where_parts: List[str] = []
+        if suc_list:
+            placeholders = ",".join(["%s"] * len(suc_list))
+            where_parts.append(f"v.sucursal IN ({placeholders})")
+            params.extend(suc_list)
+        if fam_list:
+            placeholders = ",".join(["%s"] * len(fam_list))
+            where_parts.append(f"LEFT(UPPER(v.cod_articulo), 2) IN ({placeholders})")
+            params.extend(fam_list)
+        cod_filters: List[str] = []
+        for p in cod_prefix:
+            cod_filters.append("(UPPER(v.cod_articulo) LIKE %s OR UPPER(v.cod_base) LIKE %s)")
+            params.extend([f"{p}%", f"{p}%"])
+        for c in cod_contains:
+            cod_filters.append("(UPPER(v.cod_articulo) LIKE %s OR UPPER(v.cod_base) LIKE %s)")
+            params.extend([f"%{c}%", f"%{c}%"])
+        if cod_filters:
+            where_parts.append("(" + " OR ".join(cod_filters) + ")")
+
+        where_sql = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
+
+        q_ventas = f"""
+            SELECT
+                EXTRACT(YEAR FROM fecha)::int AS anio,
+                EXTRACT(MONTH FROM fecha)::int AS mes_num,
+                COALESCE(SUM(cantidad_venta), 0) AS ventas_unidades,
+                COALESCE(SUM(importe), 0) AS ventas_importe
+            FROM ventas v
+            {where_sql}
+            GROUP BY 1,2
+            ORDER BY 1,2
+        """
+        df_v = pd.read_sql(q_ventas, conn, params=params)
+
+        hist_where_parts: List[str] = []
+        hist_params: List[str] = []
+        if suc_list:
+            placeholders = ",".join(["%s"] * len(suc_list))
+            hist_where_parts.append(f"h.sucursal IN ({placeholders})")
+            hist_params.extend(suc_list)
+        if fam_list:
+            placeholders = ",".join(["%s"] * len(fam_list))
+            hist_where_parts.append(f"LEFT(UPPER(h.cod_articulo), 2) IN ({placeholders})")
+            hist_params.extend(fam_list)
+        hist_cod_filters: List[str] = []
+        for p in cod_prefix:
+            hist_cod_filters.append("(UPPER(h.cod_articulo) LIKE %s OR UPPER(h.cod_base) LIKE %s)")
+            hist_params.extend([f"{p}%", f"{p}%"])
+        for c in cod_contains:
+            hist_cod_filters.append("(UPPER(h.cod_articulo) LIKE %s OR UPPER(h.cod_base) LIKE %s)")
+            hist_params.extend([f"%{c}%", f"%{c}%"])
+        if hist_cod_filters:
+            hist_where_parts.append("(" + " OR ".join(hist_cod_filters) + ")")
+
+        filtro_hist = ""
+        filtro_hist_join = ""
+        if hist_where_parts:
+            filtro_hist = "AND " + " AND ".join(hist_where_parts)
+            filtro_hist_join = "WHERE " + " AND ".join(hist_where_parts)
+
+        q_stock_hist = f"""
+            WITH ult_mes AS (
+                SELECT
+                    DATE_TRUNC('month', snapshot_ts) AS mes,
+                    MAX(snapshot_ts) AS ts_ult
+                FROM saldo_historial h
+                WHERE snapshot_ts IS NOT NULL
+                {filtro_hist}
+                GROUP BY 1
+            )
+            SELECT
+                EXTRACT(YEAR FROM u.mes)::int AS anio,
+                EXTRACT(MONTH FROM u.mes)::int AS mes_num,
+                COALESCE(SUM(h.stock_1), 0) AS stock_total
+            FROM ult_mes u
+            JOIN saldo_historial h
+              ON h.snapshot_ts = u.ts_ult
+            {filtro_hist_join}
+            GROUP BY 1,2
+            ORDER BY 1,2
+        """
+        try:
+            df_s = pd.read_sql(q_stock_hist, conn, params=hist_params + hist_params)
+        except Exception:
+            fallback_parts: List[str] = []
+            fallback_params: List[str] = []
+            if suc_list:
+                placeholders = ",".join(["%s"] * len(suc_list))
+                fallback_parts.append(f"sucursal IN ({placeholders})")
+                fallback_params.extend(suc_list)
+            if fam_list:
+                placeholders = ",".join(["%s"] * len(fam_list))
+                fallback_parts.append(f"LEFT(UPPER(cod_articulo), 2) IN ({placeholders})")
+                fallback_params.extend(fam_list)
+            fallback_cod_filters: List[str] = []
+            for p in cod_prefix:
+                fallback_cod_filters.append("(UPPER(cod_articulo) LIKE %s OR UPPER(cod_base) LIKE %s)")
+                fallback_params.extend([f"{p}%", f"{p}%"])
+            for c in cod_contains:
+                fallback_cod_filters.append("(UPPER(cod_articulo) LIKE %s OR UPPER(cod_base) LIKE %s)")
+                fallback_params.extend([f"%{c}%", f"%{c}%"])
+            if fallback_cod_filters:
+                fallback_parts.append("(" + " OR ".join(fallback_cod_filters) + ")")
+            fallback_filter = f"AND {' AND '.join(fallback_parts)}" if fallback_parts else ""
+            q_stock_fallback = f"""
+                SELECT
+                    EXTRACT(YEAR FROM sync_timestamp)::int AS anio,
+                    EXTRACT(MONTH FROM sync_timestamp)::int AS mes_num,
+                    COALESCE(SUM(stock_1), 0) AS stock_total
+                FROM saldo
+                WHERE sync_timestamp IS NOT NULL
+                {fallback_filter}
+                GROUP BY 1,2
+                ORDER BY 1,2
+            """
+            df_s = pd.read_sql(q_stock_fallback, conn, params=fallback_params)
+
+        base = pd.DataFrame(columns=["anio", "mes_num"])
+        if not df_v.empty:
+            base = pd.concat([base, df_v[["anio", "mes_num"]]], ignore_index=True)
+        if not df_s.empty:
+            base = pd.concat([base, df_s[["anio", "mes_num"]]], ignore_index=True)
+        if base.empty:
+            return {"rows": []}
+
+        base = base.drop_duplicates()
+        df_kpi = base.merge(df_v, on=["anio", "mes_num"], how="left")
+        df_kpi = df_kpi.merge(df_s, on=["anio", "mes_num"], how="left")
+        for col in ["ventas_unidades", "ventas_importe"]:
+            if col not in df_kpi.columns:
+                df_kpi[col] = 0
+            df_kpi[col] = pd.to_numeric(df_kpi[col], errors="coerce").fillna(0.0)
+
+        if "stock_total" not in df_kpi.columns:
+            df_kpi["stock_total"] = None
+        else:
+            df_kpi["stock_total"] = pd.to_numeric(df_kpi["stock_total"], errors="coerce")
+
+        df_kpi = df_kpi.sort_values(["anio", "mes_num"])
+        df_kpi = df_kpi.where(pd.notnull(df_kpi), None)
+
+        stock_hist = {"meses": 0}
+        if not df_s.empty:
+            df_s = df_s.sort_values(["anio", "mes_num"])
+            first = df_s.iloc[0]
+            last = df_s.iloc[-1]
+            stock_hist = {
+                "meses": int(df_s[["anio", "mes_num"]].drop_duplicates().shape[0]),
+                "desde": f"{int(first.mes_num):02d}-{int(first.anio)}",
+                "hasta": f"{int(last.mes_num):02d}-{int(last.anio)}",
+            }
+
+        def _json_safe(value):
+            if value is None:
+                return None
+            if isinstance(value, (str, int, float, bool)):
+                if isinstance(value, float):
+                    if not math.isfinite(value):
+                        return None
+                return value
+            if isinstance(value, Decimal):
+                return float(value)
+            if hasattr(value, "item"):
+                try:
+                    v = value.item()
+                    if isinstance(v, float) and not math.isfinite(v):
+                        return None
+                    return v
+                except Exception:
+                    pass
+            return value
+
+        rows = [
+            {k: _json_safe(v) for k, v in row.items()}
+            for row in df_kpi.to_dict(orient="records")
+        ]
+        stock_hist = {k: _json_safe(v) for k, v in stock_hist.items()}
+        return {"rows": rows, "stock_hist": stock_hist}
+    except Exception as e:
+        logger.exception("Error en kpi-evolucion")
+        return JSONResponse(status_code=500, content={"error": str(e)})
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+@app.get("/kpi-alertas-criticas")
+async def get_kpi_alertas_criticas(
+    dias: int = 30,
+    sucursales: Optional[str] = None,
+    familias: Optional[str] = None,
+    codigos: Optional[str] = None,
+):
     suc_list = _parse_csv_param(sucursales)
-    if sucursal and sucursal != "Todas" and sucursal not in suc_list:
-        suc_list.append(sucursal)
     fam_list = [f.upper() for f in _parse_csv_param(familias)]
     cod_list = [c.upper() for c in _parse_csv_param(codigos)]
     cod_prefix = [c[:-1] for c in cod_list if c.endswith("*")]
     cod_contains = [c for c in cod_list if not c.endswith("*")]
 
-    params: List[str] = []
-    where_parts: List[str] = []
-    if suc_list:
-        placeholders = ",".join(["%s"] * len(suc_list))
-        where_parts.append(f"v.sucursal IN ({placeholders})")
-        params.extend(suc_list)
-    if fam_list:
-        placeholders = ",".join(["%s"] * len(fam_list))
-        where_parts.append(f"LEFT(UPPER(v.cod_articulo), 2) IN ({placeholders})")
-        params.extend(fam_list)
-    cod_filters: List[str] = []
-    for p in cod_prefix:
-        cod_filters.append("(UPPER(v.cod_articulo) LIKE %s OR UPPER(v.cod_base) LIKE %s)")
-        params.extend([f"{p}%", f"{p}%"])
-    for c in cod_contains:
-        cod_filters.append("(UPPER(v.cod_articulo) LIKE %s OR UPPER(v.cod_base) LIKE %s)")
-        params.extend([f"%{c}%", f"%{c}%"])
-    if cod_filters:
-        where_parts.append("(" + " OR ".join(cod_filters) + ")")
+    data = db.get_kpi_alertas_criticas(
+        dias_proyeccion=dias,
+        sucursales=suc_list if suc_list else None,
+        prefijos_familia=fam_list if fam_list else None,
+        codigos_prefix=cod_prefix if cod_prefix else None,
+        codigos_contains=cod_contains if cod_contains else None,
+    )
+    total_unidades = sum([r.get("unidades_sugeridas") or 0 for r in data])
+    total_monto = sum([r.get("monto_reponer_costo") or 0 for r in data])
+    return {
+        "rows": data,
+        "total_unidades": total_unidades,
+        "total_monto": total_monto,
+    }
 
-    where_sql = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
+@app.get("/kpi-familias-reponer")
+async def get_kpi_familias_reponer(
+    dias: int = 30,
+    sucursales: Optional[str] = None,
+    familias: Optional[str] = None,
+    codigos: Optional[str] = None,
+):
+    suc_list = _parse_csv_param(sucursales)
+    fam_list = [f.upper() for f in _parse_csv_param(familias)]
+    cod_list = [c.upper() for c in _parse_csv_param(codigos)]
+    cod_prefix = [c[:-1] for c in cod_list if c.endswith("*")]
+    cod_contains = [c for c in cod_list if not c.endswith("*")]
 
-    q_ventas = f"""
-        SELECT
-            EXTRACT(YEAR FROM fecha)::int AS anio,
-            EXTRACT(MONTH FROM fecha)::int AS mes_num,
-            COALESCE(SUM(cantidad_venta), 0) AS ventas_unidades,
-            COALESCE(SUM(importe), 0) AS ventas_importe
-        FROM ventas v
-        {where_sql}
-        GROUP BY 1,2
-        ORDER BY 1,2
-    """
-    df_v = pd.read_sql(q_ventas, conn, params=params)
-
-    hist_where_parts: List[str] = []
-    hist_params: List[str] = []
-    if suc_list:
-        placeholders = ",".join(["%s"] * len(suc_list))
-        hist_where_parts.append(f"h.sucursal IN ({placeholders})")
-        hist_params.extend(suc_list)
-    if fam_list:
-        placeholders = ",".join(["%s"] * len(fam_list))
-        hist_where_parts.append(f"LEFT(UPPER(h.cod_articulo), 2) IN ({placeholders})")
-        hist_params.extend(fam_list)
-    hist_cod_filters: List[str] = []
-    for p in cod_prefix:
-        hist_cod_filters.append("(UPPER(h.cod_articulo) LIKE %s OR UPPER(h.cod_base) LIKE %s)")
-        hist_params.extend([f"{p}%", f"{p}%"])
-    for c in cod_contains:
-        hist_cod_filters.append("(UPPER(h.cod_articulo) LIKE %s OR UPPER(h.cod_base) LIKE %s)")
-        hist_params.extend([f"%{c}%", f"%{c}%"])
-    if hist_cod_filters:
-        hist_where_parts.append("(" + " OR ".join(hist_cod_filters) + ")")
-
-    filtro_hist = ""
-    filtro_hist_join = ""
-    if hist_where_parts:
-        filtro_hist = "AND " + " AND ".join(hist_where_parts)
-        filtro_hist_join = "WHERE " + " AND ".join(hist_where_parts)
-
-    q_stock_hist = f"""
-        WITH ult_mes AS (
-            SELECT
-                DATE_TRUNC('month', snapshot_ts) AS mes,
-                MAX(snapshot_ts) AS ts_ult
-            FROM saldo_historial h
-            WHERE snapshot_ts IS NOT NULL
-            {filtro_hist}
-            GROUP BY 1
-        )
-        SELECT
-            EXTRACT(YEAR FROM u.mes)::int AS anio,
-            EXTRACT(MONTH FROM u.mes)::int AS mes_num,
-            COALESCE(SUM(h.stock_1), 0) AS stock_total
-        FROM ult_mes u
-        JOIN saldo_historial h
-          ON h.snapshot_ts = u.ts_ult
-        {filtro_hist_join}
-        GROUP BY 1,2
-        ORDER BY 1,2
-    """
-    try:
-        df_s = pd.read_sql(q_stock_hist, conn, params=hist_params + hist_params)
-    except Exception:
-        fallback_parts: List[str] = []
-        fallback_params: List[str] = []
-        if suc_list:
-            placeholders = ",".join(["%s"] * len(suc_list))
-            fallback_parts.append(f"sucursal IN ({placeholders})")
-            fallback_params.extend(suc_list)
-        if fam_list:
-            placeholders = ",".join(["%s"] * len(fam_list))
-            fallback_parts.append(f"LEFT(UPPER(cod_articulo), 2) IN ({placeholders})")
-            fallback_params.extend(fam_list)
-        fallback_cod_filters: List[str] = []
-        for p in cod_prefix:
-            fallback_cod_filters.append("(UPPER(cod_articulo) LIKE %s OR UPPER(cod_base) LIKE %s)")
-            fallback_params.extend([f"{p}%", f"{p}%"])
-        for c in cod_contains:
-            fallback_cod_filters.append("(UPPER(cod_articulo) LIKE %s OR UPPER(cod_base) LIKE %s)")
-            fallback_params.extend([f"%{c}%", f"%{c}%"])
-        if fallback_cod_filters:
-            fallback_parts.append("(" + " OR ".join(fallback_cod_filters) + ")")
-        fallback_filter = f"AND {' AND '.join(fallback_parts)}" if fallback_parts else ""
-        q_stock_fallback = f"""
-            SELECT
-                EXTRACT(YEAR FROM sync_timestamp)::int AS anio,
-                EXTRACT(MONTH FROM sync_timestamp)::int AS mes_num,
-                COALESCE(SUM(stock_1), 0) AS stock_total
-            FROM saldo
-            WHERE sync_timestamp IS NOT NULL
-            {fallback_filter}
-            GROUP BY 1,2
-            ORDER BY 1,2
-        """
-        df_s = pd.read_sql(q_stock_fallback, conn, params=fallback_params)
-
-    conn.close()
-
-    base = pd.DataFrame(columns=["anio", "mes_num"])
-    if not df_v.empty:
-        base = pd.concat([base, df_v[["anio", "mes_num"]]], ignore_index=True)
-    if not df_s.empty:
-        base = pd.concat([base, df_s[["anio", "mes_num"]]], ignore_index=True)
-    if base.empty:
-        return {"rows": []}
-
-    base = base.drop_duplicates()
-    df_kpi = base.merge(df_v, on=["anio", "mes_num"], how="left")
-    df_kpi = df_kpi.merge(df_s, on=["anio", "mes_num"], how="left")
-    for col in ["ventas_unidades", "ventas_importe"]:
-        if col not in df_kpi.columns:
-            df_kpi[col] = 0
-        df_kpi[col] = pd.to_numeric(df_kpi[col], errors="coerce").fillna(0.0)
-
-    if "stock_total" not in df_kpi.columns:
-        df_kpi["stock_total"] = None
-    else:
-        df_kpi["stock_total"] = pd.to_numeric(df_kpi["stock_total"], errors="coerce")
-
-    df_kpi = df_kpi.sort_values(["anio", "mes_num"])
-    df_kpi = df_kpi.where(pd.notnull(df_kpi), None)
-
-    stock_hist = {"meses": 0}
-    if not df_s.empty:
-        df_s = df_s.sort_values(["anio", "mes_num"])
-        first = df_s.iloc[0]
-        last = df_s.iloc[-1]
-        stock_hist = {
-            "meses": int(df_s[["anio", "mes_num"]].drop_duplicates().shape[0]),
-            "desde": f"{int(first.mes_num):02d}-{int(first.anio)}",
-            "hasta": f"{int(last.mes_num):02d}-{int(last.anio)}",
-        }
-
-    return {"rows": df_kpi.to_dict(orient="records"), "stock_hist": stock_hist}
+    data = db.get_kpi_familias_reponer(
+        dias_proyeccion=dias,
+        sucursales=suc_list if suc_list else None,
+        prefijos_familia=fam_list if fam_list else None,
+        codigos_prefix=cod_prefix if cod_prefix else None,
+        codigos_contains=cod_contains if cod_contains else None,
+    )
+    return {"rows": data}
 
 # ============== ENDPOINTS DE COSTOS ==============
 
 @app.get("/costos")
 async def get_costos():
-    """Obtener todos los costos de reposición."""
+    """Obtener todos los costos de reposiciÃ³n."""
     costos = db.get_all_costos()
     return {"costos": costos, "total": len(costos)}
 
 @app.get("/costos/{cod_articulo}")
 async def get_costo_articulo(cod_articulo: str):
-    """Obtener costo de un artículo específico."""
+    """Obtener costo de un artÃ­culo especÃ­fico."""
     costo = db.get_costo_articulo(cod_articulo)
     if costo:
         return costo
-    return {"error": "Artículo no encontrado", "cod_articulo": cod_articulo}
+    return {"error": "ArtÃ­culo no encontrado", "cod_articulo": cod_articulo}
 
 @app.post("/costos")
 async def upload_costos(request: Request):
-    """Subir o actualizar costos de reposición."""
+    """Subir o actualizar costos de reposiciÃ³n."""
     try:
         data = await request.json()
         costos_list = data.get("costos", [])
@@ -820,13 +918,13 @@ async def delete_costos():
 
 @app.get("/metricas-costos")
 async def get_metricas_con_costos(sucursal: Optional[str] = None, alerta: Optional[str] = None, familia: Optional[str] = None):
-    """Obtener métricas con costos de reposición integrados."""
+    """Obtener mÃ©tricas con costos de reposiciÃ³n integrados."""
     data = db.get_metricas_con_costos(sucursal, alerta, familia)
     return {"data": data, "total": len(data)}
 
 @app.get("/resumen-costos")
 async def get_resumen_costos():
-    """Obtener resumen de valores de stock y reposición por sucursal."""
+    """Obtener resumen de valores de stock y reposiciÃ³n por sucursal."""
     resumen = db.get_resumen_costos_por_sucursal()
     return {"resumen": resumen}
 
@@ -836,7 +934,7 @@ async def health_check():
 
 @app.get("/sync-info")
 async def get_sync_info():
-    """Obtener info para sincronización incremental"""
+    """Obtener info para sincronizaciÃ³n incremental"""
     info = db.get_sync_info()
     # Convertir fechas a string para JSON
     if info.get("ultima_fecha_ventas"):
@@ -855,12 +953,12 @@ async def get_sync_info():
 
 @app.get("/quality")
 async def get_quality():
-    """Diagnóstico de cobertura de datos para monitoreo UI/servicio."""
+    """DiagnÃ³stico de cobertura de datos para monitoreo UI/servicio."""
     return db.get_data_quality_summary()
 
 @app.post("/recalcular-metricas")
 async def recalcular_metricas():
-    """Recalcular métricas desde los datos existentes"""
+    """Recalcular mÃ©tricas desde los datos existentes"""
     try:
         timestamp = datetime.now()
         
@@ -869,15 +967,15 @@ async def recalcular_metricas():
         ventas = db.get_all_ventas()
         
         if not saldos:
-            return {"status": "error", "message": "No hay saldos para calcular métricas"}
+            return {"status": "error", "message": "No hay saldos para calcular mÃ©tricas"}
         
         df_saldo = pd.DataFrame(saldos)
         df_ventas = pd.DataFrame(ventas) if ventas else pd.DataFrame()
         
-        # Calcular métricas
+        # Calcular mÃ©tricas
         df_resultado = calcular_metricas(df_saldo, df_ventas)
         
-        # Guardar métricas
+        # Guardar mÃ©tricas
         metricas_records = df_resultado.to_dict(orient="records")
         db.clear_metricas()
         db.insert_metricas(metricas_records, timestamp)
@@ -888,12 +986,12 @@ async def recalcular_metricas():
             registros_ventas=len(ventas) if ventas else 0,
             registros_metricas=len(metricas_records),
             status="ok",
-            message="Métricas recalculadas"
+            message="MÃ©tricas recalculadas"
         )
         
         return {
             "status": "ok",
-            "message": "Métricas recalculadas",
+            "message": "MÃ©tricas recalculadas",
             "registros": len(metricas_records),
             "timestamp": timestamp.isoformat()
         }
@@ -925,7 +1023,7 @@ async def enviar_whatsapp_alerta(request: WhatsAppRequest):
                 return {"success": False, "error": "Se requiere nombre de sucursal"}
             resultado = wa.enviar_alerta_sucursal(request.numero_destino, request.sucursal, datos)
         else:
-            return {"success": False, "error": "Tipo de mensaje no válido"}
+            return {"success": False, "error": "Tipo de mensaje no vÃ¡lido"}
         
         return resultado
     except Exception as e:
@@ -948,13 +1046,13 @@ async def preview_mensaje_whatsapp(tipo: str, sucursal: Optional[str] = None):
             mensaje = wa.generar_mensaje_comercial(datos)
         elif tipo == "sucursal":
             if not sucursal:
-                return {"success": False, "error": "Se requiere parámetro sucursal"}
+                return {"success": False, "error": "Se requiere parÃ¡metro sucursal"}
             suc_data = next((s for s in datos if s["sucursal"].upper() == sucursal.upper()), None)
             if not suc_data:
                 return {"success": False, "error": f"Sucursal {sucursal} no encontrada"}
             mensaje = wa.generar_mensaje_alerta_sucursal(suc_data)
         else:
-            return {"success": False, "error": "Tipo no válido. Use: resumen, comercial, sucursal"}
+            return {"success": False, "error": "Tipo no vÃ¡lido. Use: resumen, comercial, sucursal"}
         
         return {"success": True, "mensaje": mensaje, "tipo": tipo}
     except Exception as e:
@@ -1002,7 +1100,7 @@ async def enviar_email_alerta(request: EmailRequest):
         elif request.tipo_mensaje == "comercial":
             resultado = ea.enviar_resumen_comercial(request.email_destino, dias)
         else:
-            return {"success": False, "error": "Tipo de mensaje no válido. Use: resumen, sucursal, comercial"}
+            return {"success": False, "error": "Tipo de mensaje no vÃ¡lido. Use: resumen, sucursal, comercial"}
         
         return resultado
     except Exception as e:
@@ -1025,7 +1123,7 @@ async def preview_email(tipo: str, sucursal: Optional[str] = None, dias: int = 3
         elif tipo == "comercial":
             html = ea.generar_html_resumen_comercial(dias)
         else:
-            return {"error": "Tipo no válido"}
+            return {"error": "Tipo no vÃ¡lido"}
         
         return HTMLResponse(content=html)
     except Exception as e:
@@ -1061,3 +1159,4 @@ async def enviar_emails_sucursales_rojas(emails: dict, dias: int = 30):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=5000)
+

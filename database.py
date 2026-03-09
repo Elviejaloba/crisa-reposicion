@@ -1,4 +1,4 @@
-import os
+﻿import os
 import psycopg2
 
 # Cargar variables de entorno desde .env si existe (opcional)
@@ -14,7 +14,9 @@ from typing import Optional, List
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 SUCURSALES_UNIFICAR = {
-    "LA TIJERA MAYORISTA MENDOZA": "LA TIJERA MENDOZA"
+    "LA TIJERA MAYORISTA MENDOZA": "LA TIJERA MENDOZA",
+    "LA TIJERA MAYORISTA SJUAN": "LA TIJERA SAN JUAN",
+    "LA TIJERA MAYORISTA SAN JUAN": "LA TIJERA SAN JUAN",
 }
 
 SUCURSALES_EXCLUIR = list(SUCURSALES_UNIFICAR.keys())
@@ -44,7 +46,7 @@ def init_database():
         )
     """)
 
-    # Histórico de snapshots de stock para análisis KPI mensual/anual real
+    # HistÃ³rico de snapshots de stock para anÃ¡lisis KPI mensual/anual real
     cur.execute("""
         CREATE TABLE IF NOT EXISTS saldo_historial (
             id BIGSERIAL PRIMARY KEY,
@@ -165,7 +167,7 @@ def init_database():
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_costos_articulo ON costos(cod_articulo)")
 
-    # Tabla de artículos (nómina)
+    # Tabla de artÃ­culos (nÃ³mina)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS articulos (
             id SERIAL PRIMARY KEY,
@@ -214,7 +216,7 @@ def init_database():
     except Exception:
         pass
 
-    # Tabla de categorías (si no existe)
+    # Tabla de categorÃ­as (si no existe)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS categorias (
             id SERIAL PRIMARY KEY,
@@ -225,7 +227,7 @@ def init_database():
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_categorias_articulo ON categorias(cod_articulo)")
     
-    # Crear constraints únicos si no existen (para tablas existentes)
+    # Crear constraints Ãºnicos si no existen (para tablas existentes)
     try:
         cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_saldo_unique ON saldo(cod_articulo, cod_deposito, sucursal)")
     except:
@@ -410,7 +412,7 @@ def upsert_saldo(records: list, timestamp: datetime):
 
 def insert_saldo_historial_snapshot(records: list, timestamp: datetime):
     """
-    Inserta snapshot histórico de saldo para evolución temporal.
+    Inserta snapshot histÃ³rico de saldo para evoluciÃ³n temporal.
     No hace UPSERT para conservar la traza de cada corrida.
     """
     if not records:
@@ -569,7 +571,7 @@ def upsert_ventas(records: list, timestamp: datetime):
     return len(values)
 
 def get_ultima_fecha_ventas():
-    """Obtener la última fecha de ventas sincronizada"""
+    """Obtener la Ãºltima fecha de ventas sincronizada"""
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("SELECT MAX(fecha) FROM ventas")
@@ -698,7 +700,7 @@ def upsert_precios(records: list, timestamp: datetime):
     return updated
 
 def get_sync_info():
-    """Obtener info para sincronización incremental"""
+    """Obtener info para sincronizaciÃ³n incremental"""
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute("""
@@ -752,24 +754,24 @@ def get_metricas(sucursal: Optional[str] = None, alerta: Optional[str] = None):
     
     if alerta:
         # aceptar labels antiguos y nuevos
-        if alerta in ("⚠️ Quiebre de stock", "Quiebre de stock"):
+        if alerta in ("âš ï¸ Quiebre de stock", "Quiebre de stock"):
             query += " AND alerta_stock IN (%s, %s)"
-            params.extend(["⚠️ Quiebre de stock", "Quiebre de stock"])
-        elif alerta in ("❗ Stock de Seguridad", "Stock de Seguridad"):
+            params.extend(["âš ï¸ Quiebre de stock", "Quiebre de stock"])
+        elif alerta in ("â— Stock de Seguridad", "Stock de Seguridad"):
             query += " AND alerta_stock IN (%s, %s)"
-            params.extend(["❗ Stock de Seguridad", "Stock de Seguridad"])
-        elif alerta in ("📍 Pto de Pedido", "Pto de Pedido"):
+            params.extend(["â— Stock de Seguridad", "Stock de Seguridad"])
+        elif alerta in ("ðŸ“ Pto de Pedido", "Pto de Pedido"):
             query += " AND alerta_stock IN (%s, %s)"
-            params.extend(["📍 Pto de Pedido", "Pto de Pedido"])
-        elif alerta in ("✅ OK", "OK"):
+            params.extend(["ðŸ“ Pto de Pedido", "Pto de Pedido"])
+        elif alerta in ("âœ… OK", "OK"):
             query += " AND alerta_stock IN (%s, %s)"
-            params.extend(["✅ OK", "OK"])
-        elif alerta in ("📦 Sobrestock", "Sobre stock", "Sobrestock"):
+            params.extend(["âœ… OK", "OK"])
+        elif alerta in ("ðŸ“¦ Sobrestock", "Sobre stock", "Sobrestock"):
             query += " AND alerta_stock IN (%s, %s, %s)"
-            params.extend(["📦 Sobrestock", "Sobre stock", "Sobrestock"])
-        elif alerta in ("🟠 Sin rotación", "Sin rotación (sin stock)", "Sin rotación (con sobrestock)"):
+            params.extend(["ðŸ“¦ Sobrestock", "Sobre stock", "Sobrestock"])
+        elif alerta in ("ðŸŸ  Sin rotaciÃ³n", "Sin rotaciÃ³n (sin stock)", "Sin rotaciÃ³n (con sobrestock)"):
             query += " AND alerta_stock IN (%s, %s, %s)"
-            params.extend(["🟠 Sin rotación", "Sin rotación (sin stock)", "Sin rotación (con sobrestock)"])
+            params.extend(["ðŸŸ  Sin rotaciÃ³n", "Sin rotaciÃ³n (sin stock)", "Sin rotaciÃ³n (con sobrestock)"])
         else:
             query += " AND alerta_stock = %s"
             params.append(alerta)
@@ -1025,7 +1027,7 @@ def get_matriz_distribucion(
                 END AS meses_stock,
                 (COALESCE(v.ventas_periodo, 0) - COALESCE(s.stock_sucursal, 0)) AS necesidad,
                 CASE
-                    WHEN COALESCE(v.ventas_periodo, 0) = 0 THEN 'Sin rotación'
+                    WHEN COALESCE(v.ventas_periodo, 0) = 0 THEN 'Sin rotaciÃ³n'
                     WHEN (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo, 0) / %s) * 30, 0)) < 1 THEN 'Quiebre de stock'
                     WHEN (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo, 0) / %s) * 30, 0)) >= 1
                          AND (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo, 0) / %s) * 30, 0)) < 2 THEN 'Stock de Seguridad'
@@ -1143,17 +1145,30 @@ def get_sugerencia_distribucion(
         price_filter = "WHERE nro_lista = %s OR nombre_lista ILIKE %s"
         price_params = [lista_precio, f"%{lista_precio}%"]
 
+    sucursal_case = """
+        CASE
+            WHEN UPPER(TRIM(sucursal)) = 'LA TIJERA MAYORISTA MENDOZA' THEN 'LA TIJERA MENDOZA'
+            WHEN UPPER(TRIM(sucursal)) IN (
+                'LA TIJERA MAYORISTA SJUAN',
+                'LA TIJERA MAYORISTA SAN JUAN',
+                'LA TIJERA MAYORISTA SANJUAN'
+            ) THEN 'LA TIJERA SAN JUAN'
+            ELSE TRIM(sucursal)
+        END
+    """
+
     query = f"""
         WITH ventas_p AS (
-            SELECT cod_articulo, sucursal, SUM(cantidad_venta) AS ventas_periodo
+            SELECT cod_articulo, {sucursal_case} AS sucursal, SUM(cantidad_venta) AS ventas_periodo
             FROM ventas
             WHERE fecha >= %s AND fecha <= %s
             GROUP BY 1,2
         ),
         stock_s AS (
-            SELECT cod_articulo, sucursal,
+            SELECT cod_articulo, {sucursal_case} AS sucursal,
                    SUM(stock_1) AS stock_sucursal,
-                   MAX(familia) AS familia
+                   MAX(familia) AS familia,
+                   MAX(desc_familia) AS desc_familia
             FROM saldo
             GROUP BY 1,2
         ),
@@ -1202,7 +1217,7 @@ def get_sugerencia_distribucion(
                 END AS meses_stock,
                 (COALESCE(v.ventas_periodo, 0) - COALESCE(s.stock_sucursal, 0)) AS necesidad,
                 CASE
-                    WHEN COALESCE(v.ventas_periodo, 0) = 0 THEN 'Sin rotación'
+                    WHEN COALESCE(v.ventas_periodo, 0) = 0 THEN 'Sin rotaciÃ³n'
                     WHEN (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo, 0) / %s) * 30, 0)) < 1 THEN 'Quiebre de stock'
                     WHEN (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo, 0) / %s) * 30, 0)) >= 1
                          AND (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo, 0) / %s) * 30, 0)) < 2 THEN 'Stock de Seguridad'
@@ -1280,9 +1295,14 @@ def get_sugerencia_distribucion(
         params.extend(alertas)
 
     if sucursales and len(sucursales) > 0:
-        placeholders = ','.join(['%s'] * len(sucursales))
+        sucursales_norm = []
+        for s in sucursales:
+            s = SUCURSALES_UNIFICAR.get(s, s)
+            if s not in sucursales_norm:
+                sucursales_norm.append(s)
+        placeholders = ','.join(['%s'] * len(sucursales_norm))
         query += f" AND sucursal IN ({placeholders})"
-        params.extend(list(sucursales))
+        params.extend(list(sucursales_norm))
 
     familias_uso = prefijos_familia if prefijos_familia else familias
     if familias_uso and len(familias_uso) > 0:
@@ -1324,8 +1344,268 @@ def get_sugerencia_distribucion(
     conn.close()
     return [dict(r) for r in results]
 
+def get_kpi_alertas_criticas(
+    dias_proyeccion: int = 30,
+    sucursales: Optional[List] = None,
+    prefijos_familia: Optional[List] = None,
+    codigos_prefix: Optional[List] = None,
+    codigos_contains: Optional[List] = None,
+    alertas: Optional[List] = None,
+):
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    start_date = datetime.now().date() - timedelta(days=dias_proyeccion - 1)
+    end_date = datetime.now().date()
+
+    alertas_criticas = alertas or ["Quiebre de stock", "Stock de Seguridad", "Pto de Pedido"]
+
+    query = """
+        WITH ventas_p AS (
+            SELECT cod_articulo, sucursal, SUM(cantidad_venta) AS ventas_periodo
+            FROM ventas
+            WHERE fecha >= %s AND fecha <= %s
+            GROUP BY 1,2
+        ),
+        stock_s AS (
+            SELECT cod_articulo, sucursal,
+                   SUM(stock_1) AS stock_sucursal,
+                   MAX(familia) AS familia,
+                   MAX(desc_familia) AS desc_familia
+            FROM saldo
+            GROUP BY 1,2
+        ),
+        base AS (
+            SELECT cod_articulo, sucursal FROM stock_s
+            UNION
+            SELECT cod_articulo, sucursal FROM ventas_p
+        ),
+        calc_base AS (
+            SELECT
+                COALESCE(a.cod_base, b.cod_articulo) AS cod_base,
+                b.sucursal,
+                b.cod_articulo,
+                COALESCE(s.stock_sucursal, 0) AS stock_sucursal,
+                COALESCE(v.ventas_periodo, 0) AS ventas_periodo,
+                COALESCE(v.ventas_periodo, 0) / %s AS venta_promedio_diaria,
+                CASE
+                    WHEN COALESCE(v.ventas_periodo, 0) = 0 THEN 0
+                    ELSE COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo, 0) / %s) * 30, 0)
+                END AS meses_stock,
+                (COALESCE(v.ventas_periodo, 0) - COALESCE(s.stock_sucursal, 0)) AS necesidad,
+                COALESCE(c.costo_reposicion, 0) AS costo_unitario,
+                COALESCE(s.familia, '') AS familia
+            FROM base b
+            LEFT JOIN stock_s s ON s.cod_articulo = b.cod_articulo AND s.sucursal = b.sucursal
+            LEFT JOIN ventas_p v ON v.cod_articulo = b.cod_articulo AND v.sucursal = b.sucursal
+            LEFT JOIN articulos a ON a.cod_articulo = b.cod_articulo
+            LEFT JOIN costos c ON c.cod_articulo = b.cod_articulo
+        ),
+        calc AS (
+            SELECT
+                *,
+                CASE
+                    WHEN ventas_periodo = 0 THEN 'Sin rotacion'
+                    WHEN meses_stock < 1 THEN 'Quiebre de stock'
+                    WHEN meses_stock < 2 THEN 'Stock de Seguridad'
+                    WHEN meses_stock < 3 THEN 'Pto de Pedido'
+                    WHEN meses_stock < 4 THEN 'OK'
+                    ELSE 'Sobrestock'
+                END AS alerta_stock
+            FROM calc_base
+        )
+        SELECT
+            sucursal,
+            SUM(GREATEST(necesidad, 0)) AS unidades_sugeridas,
+            SUM(GREATEST(necesidad, 0) * costo_unitario) AS monto_reponer_costo
+        FROM calc
+        WHERE 1=1
+    """
+
+    params: List = [start_date, end_date, dias_proyeccion, dias_proyeccion]
+
+    if alertas_criticas:
+        placeholders = ','.join(['%s'] * len(alertas_criticas))
+        query += f" AND alerta_stock IN ({placeholders})"
+        params.extend(alertas_criticas)
+
+    if sucursales and len(sucursales) > 0:
+        placeholders = ','.join(['%s'] * len(sucursales))
+        query += f" AND sucursal IN ({placeholders})"
+        params.extend(list(sucursales))
+
+    if prefijos_familia and len(prefijos_familia) > 0:
+        placeholders = ','.join(['%s'] * len(prefijos_familia))
+        query += f" AND LEFT(UPPER(cod_articulo), 2) IN ({placeholders})"
+        params.extend([str(x).strip().upper() for x in prefijos_familia if str(x).strip()])
+
+    cod_filters = []
+    if codigos_prefix and len(codigos_prefix) > 0:
+        for p in codigos_prefix:
+            p = str(p).strip().upper()
+            if not p:
+                continue
+            cod_filters.append("(UPPER(cod_articulo) LIKE %s OR UPPER(cod_base) LIKE %s)")
+            params.extend([f"{p}%", f"{p}%"])
+
+    if codigos_contains and len(codigos_contains) > 0:
+        for c in codigos_contains:
+            c = str(c).strip().upper()
+            if not c:
+                continue
+            cod_filters.append("(UPPER(cod_articulo) LIKE %s OR UPPER(cod_base) LIKE %s)")
+            params.extend([f"%{c}%", f"%{c}%"])
+
+    if cod_filters:
+        query += " AND (" + " OR ".join(cod_filters) + ")"
+
+    query += " AND necesidad > 0 GROUP BY sucursal ORDER BY monto_reponer_costo DESC"
+
+    cur.execute(query, params)
+    results = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    merged: dict = {}
+    for r in results:
+        d = dict(r)
+        suc = d.get("sucursal")
+        if suc in SUCURSALES_UNIFICAR:
+            suc = SUCURSALES_UNIFICAR[suc]
+        d["sucursal"] = suc
+        if suc in merged:
+            merged[suc]["unidades_sugeridas"] += d.get("unidades_sugeridas") or 0
+            merged[suc]["monto_reponer_costo"] += d.get("monto_reponer_costo") or 0
+        else:
+            merged[suc] = d
+
+    merged_list = list(merged.values())
+    merged_list.sort(key=lambda x: x.get("monto_reponer_costo") or 0, reverse=True)
+    return merged_list
+
+def get_kpi_familias_reponer(
+    dias_proyeccion: int = 30,
+    sucursales: Optional[List] = None,
+    prefijos_familia: Optional[List] = None,
+    codigos_prefix: Optional[List] = None,
+    codigos_contains: Optional[List] = None,
+    alertas: Optional[List] = None,
+):
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    start_date = datetime.now().date() - timedelta(days=dias_proyeccion - 1)
+    end_date = datetime.now().date()
+
+    alertas_criticas = alertas or ["Quiebre de stock", "Stock de Seguridad", "Pto de Pedido"]
+
+    query = """
+        WITH ventas_p AS (
+            SELECT cod_articulo, sucursal, SUM(cantidad_venta) AS ventas_periodo
+            FROM ventas
+            WHERE fecha >= %s AND fecha <= %s
+            GROUP BY 1,2
+        ),
+        stock_s AS (
+            SELECT cod_articulo, sucursal,
+                   SUM(stock_1) AS stock_sucursal,
+                   MAX(familia) AS familia,
+                   MAX(desc_familia) AS desc_familia
+            FROM saldo
+            GROUP BY 1,2
+        ),
+        base AS (
+            SELECT cod_articulo, sucursal FROM stock_s
+            UNION
+            SELECT cod_articulo, sucursal FROM ventas_p
+        ),
+        calc_base AS (
+            SELECT
+                b.sucursal,
+                b.cod_articulo,
+                COALESCE(s.familia, '') AS familia,
+                COALESCE(s.desc_familia, '') AS desc_familia,
+                COALESCE(s.stock_sucursal, 0) AS stock_sucursal,
+                COALESCE(v.ventas_periodo, 0) AS ventas_periodo,
+                COALESCE(v.ventas_periodo, 0) / %s AS venta_promedio_diaria,
+                CASE
+                    WHEN COALESCE(v.ventas_periodo, 0) = 0 THEN 0
+                    ELSE COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo, 0) / %s) * 30, 0)
+                END AS meses_stock,
+                (COALESCE(v.ventas_periodo, 0) - COALESCE(s.stock_sucursal, 0)) AS necesidad,
+                COALESCE(c.costo_reposicion, 0) AS costo_unitario
+            FROM base b
+            LEFT JOIN stock_s s ON s.cod_articulo = b.cod_articulo AND s.sucursal = b.sucursal
+            LEFT JOIN ventas_p v ON v.cod_articulo = b.cod_articulo AND v.sucursal = b.sucursal
+            LEFT JOIN costos c ON c.cod_articulo = b.cod_articulo
+        ),
+        calc AS (
+            SELECT
+                *,
+                CASE
+                    WHEN ventas_periodo = 0 THEN 'Sin rotacion'
+                    WHEN meses_stock < 1 THEN 'Quiebre de stock'
+                    WHEN meses_stock < 2 THEN 'Stock de Seguridad'
+                    WHEN meses_stock < 3 THEN 'Pto de Pedido'
+                    WHEN meses_stock < 4 THEN 'OK'
+                    ELSE 'Sobrestock'
+                END AS alerta_stock
+            FROM calc_base
+        )
+        SELECT
+            COALESCE(NULLIF(desc_familia, ''), NULLIF(familia, ''), 'SIN FAMILIA') AS familia,
+            SUM(GREATEST(necesidad, 0) * costo_unitario) AS monto_reponer_costo
+        FROM calc
+        WHERE 1=1
+    """
+
+    params: List = [start_date, end_date, dias_proyeccion, dias_proyeccion]
+
+    if alertas_criticas:
+        placeholders = ','.join(['%s'] * len(alertas_criticas))
+        query += f" AND alerta_stock IN ({placeholders})"
+        params.extend(alertas_criticas)
+
+    if sucursales and len(sucursales) > 0:
+        placeholders = ','.join(['%s'] * len(sucursales))
+        query += f" AND sucursal IN ({placeholders})"
+        params.extend(list(sucursales))
+
+    if prefijos_familia and len(prefijos_familia) > 0:
+        placeholders = ','.join(['%s'] * len(prefijos_familia))
+        query += f" AND LEFT(UPPER(cod_articulo), 2) IN ({placeholders})"
+        params.extend([str(x).strip().upper() for x in prefijos_familia if str(x).strip()])
+
+    cod_filters = []
+    if codigos_prefix and len(codigos_prefix) > 0:
+        for p in codigos_prefix:
+            p = str(p).strip().upper()
+            if not p:
+                continue
+            cod_filters.append("UPPER(cod_articulo) LIKE %s")
+            params.extend([f"{p}%"])
+
+    if codigos_contains and len(codigos_contains) > 0:
+        for c in codigos_contains:
+            c = str(c).strip().upper()
+            if not c:
+                continue
+            cod_filters.append("UPPER(cod_articulo) LIKE %s")
+            params.extend([f"%{c}%"])
+
+    if cod_filters:
+        query += " AND (" + " OR ".join(cod_filters) + ")"
+
+    query += " AND necesidad > 0 GROUP BY COALESCE(NULLIF(desc_familia, ''), NULLIF(familia, ''), 'SIN FAMILIA') ORDER BY monto_reponer_costo DESC"
+
+    cur.execute(query, params)
+    results = cur.fetchall()
+    cur.close()
+    conn.close()
+    return [dict(r) for r in results]
+
 def get_categorias():
-    """Obtener todas las categorías únicas"""
+    """Obtener todas las categorÃ­as Ãºnicas"""
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("SELECT DISTINCT categoria FROM categorias WHERE categoria IS NOT NULL AND categoria != '' ORDER BY categoria")
@@ -1335,7 +1615,7 @@ def get_categorias():
     return results
 
 def get_subcategorias(categoria: Optional[str] = None):
-    """Obtener subcategorías, opcionalmente filtradas por categoría"""
+    """Obtener subcategorÃ­as, opcionalmente filtradas por categorÃ­a"""
     conn = get_connection()
     cur = conn.cursor()
     if categoria:
@@ -1348,7 +1628,7 @@ def get_subcategorias(categoria: Optional[str] = None):
     return results
 
 def get_articulos_por_categoria(categorias: Optional[List] = None, subcategorias: Optional[List] = None):
-    """Obtener códigos de artículos filtrados por categoría y/o subcategoría"""
+    """Obtener cÃ³digos de artÃ­culos filtrados por categorÃ­a y/o subcategorÃ­a"""
     conn = get_connection()
     cur = conn.cursor()
     query = "SELECT DISTINCT cod_articulo FROM categorias WHERE 1=1"
@@ -1424,7 +1704,7 @@ def upsert_articulos(records: list, timestamp: datetime):
 
 def refresh_categorias_from_articulos():
     """
-    Reconstruye categorías a partir de nómina de artículos.
+    Reconstruye categorÃ­as a partir de nÃ³mina de artÃ­culos.
     categoria   -> familia
     subcategoria-> desc_agrupacion
     """
@@ -1449,7 +1729,7 @@ def refresh_categorias_from_articulos():
 
 def get_data_quality_summary():
     """
-    Diagnóstico rápido de cobertura de datos.
+    DiagnÃ³stico rÃ¡pido de cobertura de datos.
     """
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -1494,7 +1774,7 @@ def get_articulos_base(limit: int = 5000):
         LIMIT %s
     """, (limit,))
     results = cur.fetchall()
-    # Fallback si articulos aún no fue sincronizada
+    # Fallback si articulos aÃºn no fue sincronizada
     if not results:
         cur.execute("""
             SELECT DISTINCT cod_base, desc_base
@@ -1518,7 +1798,7 @@ def get_articulos_base(limit: int = 5000):
     return [dict(r) for r in results]
 
 def get_detalle_sucursal(sucursal: str, lista_precio: str, dias: int):
-    """Obtener detalle de artículos críticos para una sucursal con valorización por período"""
+    """Obtener detalle de artÃ­culos crÃ­ticos para una sucursal con valorizaciÃ³n por perÃ­odo"""
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
     
@@ -1539,7 +1819,7 @@ def get_detalle_sucursal(sucursal: str, lista_precio: str, dias: int):
         FROM metricas m
         LEFT JOIN precios p ON m.cod_articulo = p.cod_articulo AND p.nro_lista = %s
         WHERE (m.sucursal = %s OR m.sucursal LIKE %s)
-        AND m.alerta_stock IN ('⚠️ Quiebre de stock', '❗ Stock de Seguridad')
+        AND m.alerta_stock IN ('âš ï¸ Quiebre de stock', 'â— Stock de Seguridad')
         AND GREATEST(0, (COALESCE(m.venta_promedio_diaria, 0) * %s) - COALESCE(m.stock_1, 0)) > 0
         ORDER BY valor DESC
         LIMIT 100
@@ -1554,7 +1834,7 @@ def get_detalle_sucursal(sucursal: str, lista_precio: str, dias: int):
     return [dict(r) for r in results]
 
 def get_resumen_reposicion(dias=30):
-    """Obtener resumen de reposición por sucursal para el dashboard"""
+    """Obtener resumen de reposiciÃ³n por sucursal para el dashboard"""
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
     
@@ -1562,30 +1842,30 @@ def get_resumen_reposicion(dias=30):
         SELECT 
             m.sucursal,
             COUNT(DISTINCT c.categoria) as grupos,
-            SUM(CASE WHEN m.alerta_stock = '⚠️ Quiebre de stock' THEN 1 ELSE 0 END) as quiebre_qty,
-            COALESCE(SUM(CASE WHEN m.alerta_stock = '⚠️ Quiebre de stock' 
+            SUM(CASE WHEN m.alerta_stock = 'âš ï¸ Quiebre de stock' THEN 1 ELSE 0 END) as quiebre_qty,
+            COALESCE(SUM(CASE WHEN m.alerta_stock = 'âš ï¸ Quiebre de stock' 
                 THEN GREATEST(0, m.venta_promedio_diaria * %s - m.stock_1) * COALESCE(p.precio, 0) ELSE 0 END), 0) as quiebre_val,
-            SUM(CASE WHEN m.alerta_stock = '❗ Stock de Seguridad' THEN 1 ELSE 0 END) as seguridad_qty,
-            COALESCE(SUM(CASE WHEN m.alerta_stock = '❗ Stock de Seguridad' 
+            SUM(CASE WHEN m.alerta_stock = 'â— Stock de Seguridad' THEN 1 ELSE 0 END) as seguridad_qty,
+            COALESCE(SUM(CASE WHEN m.alerta_stock = 'â— Stock de Seguridad' 
                 THEN GREATEST(0, m.venta_promedio_diaria * %s - m.stock_1) * COALESCE(p.precio, 0) ELSE 0 END), 0) as seguridad_val,
-            SUM(CASE WHEN m.alerta_stock = '📍 Pto de Pedido' THEN 1 ELSE 0 END) as pedido_qty,
-            COALESCE(SUM(CASE WHEN m.alerta_stock = '📍 Pto de Pedido' 
+            SUM(CASE WHEN m.alerta_stock = 'ðŸ“ Pto de Pedido' THEN 1 ELSE 0 END) as pedido_qty,
+            COALESCE(SUM(CASE WHEN m.alerta_stock = 'ðŸ“ Pto de Pedido' 
                 THEN GREATEST(0, m.venta_promedio_diaria * %s - m.stock_1) * COALESCE(p.precio, 0) ELSE 0 END), 0) as pedido_val,
-            SUM(CASE WHEN m.alerta_stock = '📦 Sobrestock' THEN 1 ELSE 0 END) as sobrestock_qty,
-            COALESCE(SUM(CASE WHEN m.alerta_stock = '📦 Sobrestock' 
+            SUM(CASE WHEN m.alerta_stock = 'ðŸ“¦ Sobrestock' THEN 1 ELSE 0 END) as sobrestock_qty,
+            COALESCE(SUM(CASE WHEN m.alerta_stock = 'ðŸ“¦ Sobrestock' 
                 THEN m.stock_1 * COALESCE(p.precio, 0) ELSE 0 END), 0) as sobrestock_val,
-            SUM(CASE WHEN m.alerta_stock IN ('🟠 Sin rotación') THEN 1 ELSE 0 END) as sinrot_qty,
-            COALESCE(SUM(CASE WHEN m.alerta_stock IN ('🟠 Sin rotación') 
+            SUM(CASE WHEN m.alerta_stock IN ('ðŸŸ  Sin rotaciÃ³n') THEN 1 ELSE 0 END) as sinrot_qty,
+            COALESCE(SUM(CASE WHEN m.alerta_stock IN ('ðŸŸ  Sin rotaciÃ³n') 
                 THEN m.stock_1 * COALESCE(p.precio, 0) ELSE 0 END), 0) as sinrot_val,
-            SUM(CASE WHEN m.alerta_stock = '✅ OK' THEN 1 ELSE 0 END) as ok_qty
+            SUM(CASE WHEN m.alerta_stock = 'âœ… OK' THEN 1 ELSE 0 END) as ok_qty
         FROM metricas m
         LEFT JOIN precios p ON m.cod_articulo = p.cod_articulo AND p.nro_lista = '2'
         LEFT JOIN categorias c ON m.cod_articulo = c.cod_articulo
         WHERE m.sucursal NOT IN ('LA TIJERA MAYORISTA MENDOZA')
         GROUP BY m.sucursal
-        ORDER BY (COALESCE(SUM(CASE WHEN m.alerta_stock = '⚠️ Quiebre de stock' 
+        ORDER BY (COALESCE(SUM(CASE WHEN m.alerta_stock = 'âš ï¸ Quiebre de stock' 
                 THEN GREATEST(0, m.venta_promedio_diaria * %s - m.stock_1) * COALESCE(p.precio, 0) ELSE 0 END), 0) +
-                 COALESCE(SUM(CASE WHEN m.alerta_stock = '❗ Stock de Seguridad' 
+                 COALESCE(SUM(CASE WHEN m.alerta_stock = 'â— Stock de Seguridad' 
                 THEN GREATEST(0, m.venta_promedio_diaria * %s - m.stock_1) * COALESCE(p.precio, 0) ELSE 0 END), 0)) DESC
         LIMIT 10
     """
@@ -1615,9 +1895,9 @@ def get_resumen_reposicion(dias=30):
     query_tabla = """
         SELECT 
             m.sucursal,
-            COALESCE(c.categoria, 'Sin Categoría') as grupo,
+            COALESCE(c.categoria, 'Sin CategorÃ­a') as grupo,
             COUNT(DISTINCT m.cod_articulo) as articulos,
-            SUM(CASE WHEN m.alerta_stock IN ('⚠️ Quiebre de stock', '❗ Stock de Seguridad') THEN 1 ELSE 0 END) as faltantes,
+            SUM(CASE WHEN m.alerta_stock IN ('âš ï¸ Quiebre de stock', 'â— Stock de Seguridad') THEN 1 ELSE 0 END) as faltantes,
             SUM(GREATEST(0, m.venta_promedio_diaria * %s - m.stock_1)) as cant_reponer,
             COALESCE(SUM(
                 GREATEST(0, m.venta_promedio_diaria * %s - m.stock_1) * COALESCE(p.precio, 0)
@@ -1625,7 +1905,7 @@ def get_resumen_reposicion(dias=30):
         FROM metricas m
         LEFT JOIN precios p ON m.cod_articulo = p.cod_articulo AND p.nro_lista = '2'
         LEFT JOIN categorias c ON m.cod_articulo = c.cod_articulo
-        WHERE m.alerta_stock IN ('⚠️ Quiebre de stock', '❗ Stock de Seguridad')
+        WHERE m.alerta_stock IN ('âš ï¸ Quiebre de stock', 'â— Stock de Seguridad')
         AND m.sucursal NOT IN ('LA TIJERA MAYORISTA MENDOZA')
         GROUP BY m.sucursal, c.categoria
         HAVING SUM(GREATEST(0, m.venta_promedio_diaria * %s - m.stock_1)) > 0
@@ -1640,7 +1920,7 @@ def get_resumen_reposicion(dias=30):
         sucursal_nombre = row['sucursal'].replace('LA TIJERA ', '') if row['sucursal'] else 'N/A'
         tabla.append({
             'sucursal': sucursal_nombre,
-            'grupo': row['grupo'] or 'Sin Categoría',
+            'grupo': row['grupo'] or 'Sin CategorÃ­a',
             'articulos': int(row['articulos'] or 0),
             'faltantes': int(row['faltantes'] or 0),
             'cant_reponer': int(row['cant_reponer'] or 0),
@@ -1656,7 +1936,7 @@ def get_resumen_reposicion(dias=30):
     }
 
 def get_prioridades_distribucion(dias=30):
-    """Obtener prioridades de distribución por sucursal para el jefe logístico"""
+    """Obtener prioridades de distribuciÃ³n por sucursal para el jefe logÃ­stico"""
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
     
@@ -1667,11 +1947,11 @@ def get_prioridades_distribucion(dias=30):
                 COALESCE(c.categoria, 'SIN CATEGORIA') as categoria,
                 COUNT(DISTINCT m.cod_articulo) as articulos,
                 SUM(GREATEST(0, m.venta_promedio_diaria * %s - m.stock_1)) as unidades_necesarias,
-                SUM(CASE WHEN m.alerta_stock = '⚠️ Quiebre de stock' THEN 1 ELSE 0 END) as quiebres
+                SUM(CASE WHEN m.alerta_stock = 'âš ï¸ Quiebre de stock' THEN 1 ELSE 0 END) as quiebres
             FROM metricas m
             LEFT JOIN categorias c ON m.cod_articulo = c.cod_articulo
             WHERE m.sucursal NOT IN ('CRISA CENTRAL', 'LA TIJERA MAYORISTA MENDOZA')
-            AND m.alerta_stock IN ('⚠️ Quiebre de stock', '❗ Stock de Seguridad', '📍 Pto de Pedido')
+            AND m.alerta_stock IN ('âš ï¸ Quiebre de stock', 'â— Stock de Seguridad', 'ðŸ“ Pto de Pedido')
             GROUP BY m.sucursal, c.categoria
         )
         SELECT 
@@ -1720,7 +2000,7 @@ def get_prioridades_distribucion(dias=30):
 # ============== FUNCIONES DE COSTOS ==============
 
 def upsert_costos(costos_list):
-    """Insertar o actualizar costos de reposición."""
+    """Insertar o actualizar costos de reposiciÃ³n."""
     if not costos_list:
         return 0
     
@@ -1759,7 +2039,7 @@ def upsert_costos(costos_list):
     return count
 
 def get_all_costos():
-    """Obtener todos los costos de reposición."""
+    """Obtener todos los costos de reposiciÃ³n."""
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
     
@@ -1777,7 +2057,7 @@ def get_all_costos():
     return [dict(r) for r in results]
 
 def get_costo_articulo(cod_articulo):
-    """Obtener costo de un artículo específico."""
+    """Obtener costo de un artÃ­culo especÃ­fico."""
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
     
@@ -1795,7 +2075,7 @@ def get_costo_articulo(cod_articulo):
     return dict(result) if result else None
 
 def get_metricas_con_costos(sucursal=None, alerta=None, familia=None):
-    """Obtener métricas con costos de reposición integrados."""
+    """Obtener mÃ©tricas con costos de reposiciÃ³n integrados."""
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
     
@@ -1846,7 +2126,7 @@ def get_metricas_con_costos(sucursal=None, alerta=None, familia=None):
     return [dict(r) for r in results]
 
 def get_resumen_costos_por_sucursal():
-    """Obtener resumen de valores de stock y reposición por sucursal."""
+    """Obtener resumen de valores de stock y reposiciÃ³n por sucursal."""
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
     
@@ -1856,11 +2136,11 @@ def get_resumen_costos_por_sucursal():
             COUNT(DISTINCT m.cod_articulo) as total_articulos,
             SUM(m.stock_1) as total_unidades,
             SUM(COALESCE(c.costo_reposicion * m.stock_1, 0)) as valor_stock_total,
-            SUM(CASE WHEN m.alerta_stock IN ('⚠️ Quiebre de stock', '❗ Stock de Seguridad', '📍 Pto de Pedido')
+            SUM(CASE WHEN m.alerta_stock IN ('âš ï¸ Quiebre de stock', 'â— Stock de Seguridad', 'ðŸ“ Pto de Pedido')
                 THEN COALESCE(c.costo_reposicion * GREATEST(0, m.necesidad), 0) ELSE 0 END) as valor_reposicion_urgente,
-            SUM(CASE WHEN m.alerta_stock = '⚠️ Quiebre de stock' THEN 1 ELSE 0 END) as quiebres,
-            SUM(CASE WHEN m.alerta_stock = '❗ Stock de Seguridad' THEN 1 ELSE 0 END) as seguridad,
-            SUM(CASE WHEN m.alerta_stock = '📦 Sobrestock' THEN 1 ELSE 0 END) as sobrestock
+            SUM(CASE WHEN m.alerta_stock = 'âš ï¸ Quiebre de stock' THEN 1 ELSE 0 END) as quiebres,
+            SUM(CASE WHEN m.alerta_stock = 'â— Stock de Seguridad' THEN 1 ELSE 0 END) as seguridad,
+            SUM(CASE WHEN m.alerta_stock = 'ðŸ“¦ Sobrestock' THEN 1 ELSE 0 END) as sobrestock
         FROM metricas m
         LEFT JOIN costos c ON m.cod_articulo = c.cod_articulo
         WHERE m.sucursal NOT IN ('CRISA CENTRAL', 'LA TIJERA MAYORISTA MENDOZA')
@@ -1884,4 +2164,9 @@ def delete_all_costos():
     cur.close()
     conn.close()
 
-init_database()
+if __name__ == "__main__":
+    init_database()
+
+
+
+

@@ -2,6 +2,10 @@
 .venv/
 __pycache__/
 logs/
+backend_*.log
+backend_*.out.log
+backend_*.err.log
+GRUPO CRISA.png
 node_modules/
 dist/
 build/

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+﻿import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   LineChart,
   Line,
@@ -7,6 +7,8 @@ import {
   Tooltip,
   ResponsiveContainer,
   Legend,
+  BarChart,
+  Bar,
 } from 'recharts'
 
 const defaultApiBase =
@@ -155,7 +157,21 @@ function MultiPicker({
                       detailsRef.current?.removeAttribute('open')
                     }}
                   />
-                  <span>{opt}</span>
+                  <span className="multi-label">{opt}</span>
+                  {value.length > 1 && (
+                    <button
+                      type="button"
+                      className="multi-only"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        onChange([opt])
+                        detailsRef.current?.removeAttribute('open')
+                      }}
+                    >
+                      Solo
+                    </button>
+                  )}
                 </label>
               ))
             )}
@@ -230,10 +246,17 @@ export default function App() {
   const [sugRowLimit, setSugRowLimit] = useState<number>(200)
   const [sugOnlyPositive, setSugOnlyPositive] = useState<boolean>(true)
   const [kpi, setKpi] = useState<KpiRow[]>([])
-  const [kpiSucursal, setKpiSucursal] = useState<string>('Todas')
   const [kpiMeta, setKpiMeta] = useState<any>(null)
   const [kpiLoading, setKpiLoading] = useState<boolean>(false)
   const [kpiError, setKpiError] = useState<string>('')
+  const [kpiRanking, setKpiRanking] = useState<any[]>([])
+  const [kpiRankingTotal, setKpiRankingTotal] = useState<number>(0)
+  const [kpiRankingLoading, setKpiRankingLoading] = useState<boolean>(false)
+  const [kpiRankingError, setKpiRankingError] = useState<string>('')
+  const [kpiFamilias, setKpiFamilias] = useState<any[]>([])
+  const [kpiFamiliasLoading, setKpiFamiliasLoading] = useState<boolean>(false)
+  const [kpiFamiliasError, setKpiFamiliasError] = useState<string>('')
+  const [kpiFocus, setKpiFocus] = useState<boolean>(false)
   const [sortCol, setSortCol] = useState<string>('CRISA CENTRAL')
   const [sortDesc, setSortDesc] = useState<boolean>(true)
   const [logoOk, setLogoOk] = useState<boolean>(true)
@@ -251,6 +274,21 @@ export default function App() {
   const isSameSelection = (a: string[], b: string[]) =>
     a.length === b.length && a.every((v) => b.includes(v))
 
+  const summarizeList = (items: string[], emptyLabel: string, max = 2) => {
+    if (!items.length) return emptyLabel
+    const clean = items.map((v) => String(v)).filter((v) => v)
+    if (clean.length <= max) return clean.join(', ')
+    return `${clean.slice(0, max).join(', ')} +${clean.length - max}`
+  }
+
+  const clearFilters = () => {
+    setSelSuc([])
+    setSelFamilias([])
+    setCodigo('')
+    setCodigoInput('')
+    setSelAlertas(ALERTAS.map((a) => a.value))
+    setDias(30)
+  }
   useEffect(() => {
     fetch(`${API_BASE}/sync-info`)
       .then((r) => r.json())
@@ -415,7 +453,7 @@ export default function App() {
   const sugerenciaLabels: Record<string, string> = {
     sucursal: 'Sucursal',
     cod_base: 'Cod. base',
-    cod_articulo: 'Cod. articulo',
+    cod_articulo: 'Cod. artículo',
     stock_sucursal: 'Stock sucursal',
     stock_cdd: 'Stock CDD',
     ventas_periodo: 'Ventas periodo',
@@ -432,8 +470,8 @@ export default function App() {
 
   const sugerenciaHints: Record<string, string> = {
     sucursal: 'Sucursal de la tienda',
-    cod_base: 'Codigo base del articulo',
-    cod_articulo: 'Codigo especifico del articulo',
+    cod_base: 'Codigo base del artículo',
+    cod_articulo: 'Codigo especifico del artículo',
     stock_sucursal: 'Stock disponible en la sucursal',
     stock_cdd: 'Stock disponible en CDD',
     ventas_periodo: 'Ventas del periodo seleccionado',
@@ -485,11 +523,7 @@ export default function App() {
   useEffect(() => {
     if (tab !== 'kpi') return
     const params = new URLSearchParams()
-    if (kpiSucursal && kpiSucursal !== 'Todas') {
-      params.set('sucursales', kpiSucursal)
-    } else if (selSuc.length) {
-      params.set('sucursales', selSuc.join(','))
-    }
+    if (selSuc.length) params.set('sucursales', selSuc.join(','))
     if (selFamilias.length) params.set('familias', selFamilias.join(','))
     if (codigo.trim()) params.set('codigos', codigo.trim())
     setKpiLoading(true)
@@ -525,7 +559,89 @@ export default function App() {
       window.clearTimeout(timeoutId)
       controller.abort()
     }
-  }, [tab, kpiSucursal, selSuc, selFamilias, codigo])
+  }, [tab, selSuc, selFamilias, codigo])
+
+  useEffect(() => {
+    if (tab !== 'kpi') return
+    const params = new URLSearchParams()
+    params.set('dias', String(dias))
+    if (selSuc.length) params.set('sucursales', selSuc.join(','))
+    if (selFamilias.length) params.set('familias', selFamilias.join(','))
+    if (codigo.trim()) params.set('codigos', codigo.trim())
+    setKpiRankingLoading(true)
+    setKpiRankingError('')
+    const controller = new AbortController()
+    let timedOut = false
+    const timeoutId = window.setTimeout(() => {
+      timedOut = true
+      controller.abort()
+    }, 20000)
+    fetch(`${API_BASE}/kpi-alertas-criticas?${params}`, { signal: controller.signal })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      })
+      .then((d) => {
+        setKpiRanking(d.rows || [])
+        setKpiRankingTotal(Number(d.total_monto) || 0)
+      })
+      .catch((err) => {
+        if (err?.name === 'AbortError') {
+          if (timedOut) setKpiRankingError('Tiempo de espera agotado')
+          return
+        }
+        setKpiRanking([])
+        setKpiRankingTotal(0)
+        setKpiRankingError(err?.message || 'Error al cargar')
+      })
+      .finally(() => {
+        window.clearTimeout(timeoutId)
+        setKpiRankingLoading(false)
+      })
+    return () => {
+      window.clearTimeout(timeoutId)
+      controller.abort()
+    }
+  }, [tab, dias, selSuc, selFamilias, codigo])
+
+  useEffect(() => {
+    if (tab !== 'kpi') return
+    const params = new URLSearchParams()
+    params.set('dias', String(dias))
+    if (selSuc.length) params.set('sucursales', selSuc.join(','))
+    if (selFamilias.length) params.set('familias', selFamilias.join(','))
+    if (codigo.trim()) params.set('codigos', codigo.trim())
+    setKpiFamiliasLoading(true)
+    setKpiFamiliasError('')
+    const controller = new AbortController()
+    let timedOut = false
+    const timeoutId = window.setTimeout(() => {
+      timedOut = true
+      controller.abort()
+    }, 20000)
+    fetch(`${API_BASE}/kpi-familias-reponer?${params}`, { signal: controller.signal })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      })
+      .then((d) => setKpiFamilias(d.rows || []))
+      .catch((err) => {
+        if (err?.name === 'AbortError') {
+          if (timedOut) setKpiFamiliasError('Tiempo de espera agotado')
+          return
+        }
+        setKpiFamilias([])
+        setKpiFamiliasError(err?.message || 'Error al cargar')
+      })
+      .finally(() => {
+        window.clearTimeout(timeoutId)
+        setKpiFamiliasLoading(false)
+      })
+    return () => {
+      window.clearTimeout(timeoutId)
+      controller.abort()
+    }
+  }, [tab, dias, selSuc, selFamilias, codigo])
 
   const displayRows = useMemo(() => {
     const rows = [...(matrix.rows || [])]
@@ -533,10 +649,10 @@ export default function App() {
     const dataRows = rows.filter((r) => String(r[BASE_KEY] || '').toLowerCase() !== 'total')
     const totalCol = 'Total'
 
-    // Filtrar solo artículos con necesidad (Total < 0)
+    // Filtrar solo artículos con necesidad (Total > 0)
     const filtered = dataRows.filter((r) => {
       const n = parseLocaleNumber(r[totalCol])
-      return Number.isFinite(n) ? n < 0 : false
+      return Number.isFinite(n) ? n > 0 : false
     })
 
     const total: Record<string, any> = {}
@@ -562,9 +678,10 @@ export default function App() {
 
   const displayColumns = useMemo(() => {
     if (!matrix.columns.length) return []
-    const cols = matrix.columns.filter((c) => c !== ART_KEY)
+    const cols = matrix.columns
     const preferred = [
       BASE_KEY,
+      ART_KEY,
       'Stock CDD',
       'CRISA CENTRAL',
       'MENDOZA',
@@ -646,16 +763,52 @@ export default function App() {
     }))
   }, [kpi])
 
-  const stockHistNote = useMemo(() => {
+  const kpiFamiliasChart = useMemo(() => {
+    const rows = [...kpiFamilias]
+    return rows
+      .map((r) => {
+        const raw = String(r.familia ?? '').trim()
+        const familia = !raw || raw.toLowerCase() === 'none' ? 'SIN FAMILIA' : raw
+        return {
+          familia,
+          monto: parseLocaleNumber(r.monto_reponer_costo) || 0,
+        }
+      })
+      .sort((a, b) => b.monto - a.monto)
+      .slice(0, 8)
+  }, [kpiFamilias])
+
+  const stockHistStatus = useMemo(() => {
     const stockMonths = kpi.filter((r) => r.stock_total != null).length
-    if (kpiMeta?.meses != null) {
-      if (kpiMeta.meses === 0) return 'Stock historico: sin datos disponibles.'
-      if (kpiMeta.meses === 1) return `Stock historico: solo 1 mes (${kpiMeta.desde}).`
-      return `Stock historico: ${kpiMeta.meses} meses (${kpiMeta.desde} a ${kpiMeta.hasta}).`
+    const meses = kpiMeta?.meses ?? stockMonths
+    if (!meses) {
+      return {
+        tone: 'warn',
+        text: 'Stock histórico: sin datos disponibles. El KPI de stock puede verse parcial.',
+      }
     }
-    if (stockMonths === 0) return 'Stock historico: sin datos disponibles.'
-    if (stockMonths === 1) return 'Stock historico: solo 1 mes disponible.'
-    return ''
+    if (meses === 1) {
+      return {
+        tone: 'warn',
+        text: `Stock histórico incompleto: solo 1 mes (${kpiMeta?.desde || 'último'}). El KPI de stock puede verse parcial.`,
+      }
+    }
+    if (meses < 3) {
+      return {
+        tone: 'warn',
+        text: `Stock histórico parcial: ${meses} meses. El KPI de stock puede variar.`,
+      }
+    }
+    if (kpiMeta?.desde && kpiMeta?.hasta) {
+      return {
+        tone: 'ok',
+        text: `Stock histórico: ${meses} meses (${kpiMeta.desde} a ${kpiMeta.hasta}).`,
+      }
+    }
+    return {
+      tone: 'ok',
+      text: `Stock histórico: ${meses} meses.`,
+    }
   }, [kpi, kpiMeta])
 
   const lastSyncLabel = syncInfo?.ultima_sync_saldo_historial ||
@@ -672,7 +825,11 @@ export default function App() {
   const downloadExcel = async () => {
     if (!displayColumns.length || !sortedRows.length) return
     const { utils, writeFile } = await import('xlsx')
-    const header = displayColumns.map((c) => (c === BASE_KEY ? 'Cod. base' : c))
+    const header = displayColumns.map((c) => {
+      if (c === BASE_KEY) return 'Cod. base'
+      if (c === ART_KEY) return 'Cod. artículo'
+      return c
+    })
     const rows = sortedRows.map((r) => {
       const row: Record<string, any> = {}
       displayColumns.forEach((c, idx) => {
@@ -773,6 +930,18 @@ export default function App() {
           />
         </div>
 
+        <div className="active-filters">
+          <div className="active-label">Filtros activos</div>
+          <div className="chip-row">
+            <span className="mini-pill">Sucursales: {summarizeList(selSuc, 'Todas')}</span>
+            <span className="mini-pill">Familias: {summarizeList(selFamilias, 'Todas')}</span>
+            <span className="mini-pill">Código: {codigo ? codigo : 'Todos'}</span>
+            <span className="mini-pill">Alertas: {selAlertas.length === 0 ? 'Ninguna' : selAlertas.length === ALERTAS.length ? 'Todas' : summarizeList(selAlertas, 'Todas')}</span>
+            <span className="mini-pill">Días: {dias}</span>
+            <button type="button" className="mini-pill action" onClick={clearFilters}>Limpiar filtros</button>
+          </div>
+        </div>
+
         <div className="filter-row">
           <div className="field">
             <label>Selecciona rango de días</label>
@@ -821,7 +990,7 @@ export default function App() {
 
       <section className="tabs">
         <button className={tab === 'distribucion' ? 'active' : ''} onClick={() => setTab('distribucion')}>
-          Necesidad de Distribucion
+          Necesidad de Distribución
         </button>
         <button className={tab === 'sugerencia' ? 'active' : ''} onClick={() => setTab('sugerencia')}>
           Sugerencia de Distribución
@@ -835,8 +1004,8 @@ export default function App() {
         <section className="panel">
           <div className="panel-head">
             <div className="panel-title">
-              <h2>Necesidad de distribucion</h2>
-              <p>Resumen por articulo con necesidad de distribucion segun ventas y stock CDD.</p>
+              <h2>Necesidad de distribución</h2>
+              <p>Resumen por artículo con necesidad de distribución según ventas y stock CDD.</p>
               <div className="quick-filters">
                 <button
                   type="button"
@@ -892,7 +1061,7 @@ export default function App() {
                 <thead>
                   <tr>
                     {displayColumns.map((c, idx) => {
-                      const label = c === BASE_KEY ? 'Cod. base' : c
+                      const label = c === BASE_KEY ? 'Cod. base' : c === ART_KEY ? 'Cod. artículo' : c
                       const sticky =
                         c === BASE_KEY ? 'sticky-base col-base'
                           : c === 'Stock CDD' ? 'sticky-stock col-stock'
@@ -960,8 +1129,8 @@ export default function App() {
         <section className="panel">
           <div className="panel-head">
             <div>
-              <h2>Sugerencia de Distribucion</h2>
-              <p>Listado detallado por sucursal y articulo con sugerencias de envio.</p>
+              <h2>Sugerencia de Distribución</h2>
+              <p>Listado detallado por sucursal y artículo con sugerencias de envío.</p>
               {sugerenciaSortedRows.length > 0 ? (
                 <div className="mini-stats">
                   {Object.entries(sugerenciaResumen).map(([k, v]) => (
@@ -1091,20 +1260,11 @@ export default function App() {
             <div>
               <h2>KPI de Evolucion</h2>
               <p>Indicadores historicos de ventas y stock por mes.</p>
-              {stockHistNote ? <small className="hint">{stockHistNote}</small> : null}
-            </div>
-            <div className="sort-box">
-              <div className="sort-row">
-                <div className="sort-item">
-                  <label>Sucursal</label>
-                  <select value={kpiSucursal} onChange={(e) => setKpiSucursal(e.target.value)}>
-                    <option value="Todas">Todas</option>
-                    {sucursales.map((s) => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+              {stockHistStatus?.text ? (
+                <small className={`hint ${stockHistStatus.tone === 'warn' ? 'warn' : ''}`}>
+                  {stockHistStatus.text}
+                </small>
+              ) : null}
             </div>
           </div>
           <div className="kpi-grid">
@@ -1120,8 +1280,50 @@ export default function App() {
               <div className="kpi-title">Stock total</div>
               <div className="kpi-value">{formatNumber(totalStock)}</div>
             </div>
+            <div className="kpi-card accent-rose">
+              <div className="kpi-title">Reposicion critica (costo)</div>
+              <div className="kpi-value">{formatMoney(kpiRankingTotal)}</div>
+            </div>
           </div>
-          <div className="chart">
+
+          <div className="kpi-ranking kpi-section">
+            <div className="kpi-ranking-head">
+              <div>
+                <h3>Ranking alertas criticas</h3>
+                <p>Quiebre de stock, Stock de Seguridad y Pto de Pedido.</p>
+              </div>
+              <div className="kpi-ranking-total">Monto a reponer: {formatMoney(kpiRankingTotal)}</div>
+            </div>
+            {kpiRankingLoading ? (
+              <div className="overlay-loading">
+                <div className="spinner"></div>
+                <div className="overlay-text">Calculando ranking...</div>
+              </div>
+            ) : kpiRankingError ? (
+              <div className="empty error">Error al cargar ranking: {kpiRankingError}</div>
+            ) : kpiRanking.length === 0 ? (
+              <div className="empty">Sin alertas criticas para mostrar.</div>
+            ) : (
+              <div className="ranking-list">
+                {kpiRanking.map((r, idx) => {
+                  const monto = parseLocaleNumber(r.monto_reponer_costo) || 0
+                  const max = Math.max(...kpiRanking.map((x) => parseLocaleNumber(x.monto_reponer_costo) || 0), 1)
+                  const width = Math.round((monto / max) * 100)
+                  return (
+                    <div key={`${r.sucursal}-${idx}`} className="ranking-row">
+                      <div className="ranking-label">{String(r.sucursal || '')}</div>
+                      <div className="ranking-bar">
+                        <span style={{ width: `${width}%` }}></span>
+                      </div>
+                      <div className="ranking-value">{formatMoney(monto)}</div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="chart kpi-section">
             {kpiLoading ? (
               <div className="overlay-loading">
                 <div className="spinner"></div>
@@ -1132,20 +1334,109 @@ export default function App() {
             ) : kpiChart.length === 0 ? (
               <div className="empty">Sin datos de KPI para mostrar.</div>
             ) : (
-              <ResponsiveContainer width="100%" height={320}>
-                <LineChart data={kpiChart}>
-                  <XAxis dataKey="mes" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Line type="monotone" dataKey="ventas_unidades" name="Ventas (u)" stroke="#0f766e" strokeWidth={2} />
-                  <Line type="monotone" dataKey="stock_total" name="Stock" stroke="#f97316" strokeWidth={2} connectNulls={false} />
-                </LineChart>
+              <div className="chart-card">
+                <div className="chart-head">
+                  <div className="chart-title">Evolucion ventas y stock</div>
+                  <button className="focus-btn" type="button" onClick={() => setKpiFocus(true)}>Modo enfoque</button>
+                </div>
+                <div className="chart-body">
+                  <ResponsiveContainer width="100%" height={300}>
+                    <LineChart data={kpiChart}>
+                      <XAxis dataKey="mes" />
+                      <YAxis />
+                      <Tooltip />
+                      <Legend />
+                      <Line type="monotone" dataKey="ventas_unidades" name="Ventas (u)" stroke="#0f766e" strokeWidth={2} />
+                      <Line type="monotone" dataKey="stock_total" name="Stock" stroke="#f97316" strokeWidth={2} connectNulls={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="kpi-ranking kpi-section kpi-familias">
+            <div className="kpi-ranking-head">
+              <div>
+                <h3>Top familias a reponer (costo)</h3>
+                <p>Ranking por monto a reponer en alertas criticas.</p>
+                <div className="chip-row">
+                  <span className="badge critica">Quiebre de stock</span>
+                  <span className="badge media">Stock de Seguridad</span>
+                  <span className="badge alta">Pto de Pedido</span>
+                </div>
+              </div>
+            </div>
+            {kpiFamiliasLoading ? (
+              <div className="overlay-loading">
+                <div className="spinner"></div>
+                <div className="overlay-text">Calculando familias...</div>
+              </div>
+            ) : kpiFamiliasError ? (
+              <div className="empty error">Error al cargar familias: {kpiFamiliasError}</div>
+            ) : kpiFamiliasChart.length === 0 ? (
+              <div className="empty">Sin datos para familias.</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={kpiFamiliasChart} layout="vertical" margin={{ left: 10, right: 20 }}>
+                  <XAxis type="number" tickFormatter={(v) => formatMoney(Number(v))} />
+                  <YAxis
+                    type="category"
+                    dataKey="familia"
+                    width={120}
+                    tickFormatter={(v) => {
+                      const label = String(v || '')
+                      return label.length > 16 ? `${label.slice(0, 16)}...` : label
+                    }}
+                  />
+                  <Tooltip formatter={(v: any) => formatMoney(Number(v))} />
+                  <Bar dataKey="monto" fill="#f97316" radius={[4, 4, 4, 4]} />
+                </BarChart>
               </ResponsiveContainer>
             )}
           </div>
+
+          {kpiFocus ? (
+            <div className="focus-overlay" onClick={() => setKpiFocus(false)}>
+              <div className="focus-panel" onClick={(e) => e.stopPropagation()}>
+                <div className="focus-head">
+                  <div>Modo enfoque</div>
+                  <button type="button" className="focus-close" onClick={() => setKpiFocus(false)}>Cerrar</button>
+                </div>
+                <div className="focus-body">
+                  {kpiLoading ? (
+                    <div className="overlay-loading">
+                      <div className="spinner"></div>
+                      <div className="overlay-text">Buscando datos...</div>
+                    </div>
+                  ) : kpiError ? (
+                    <div className="empty error">Error al cargar datos: {kpiError}</div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={520}>
+                      <LineChart data={kpiChart}>
+                        <XAxis dataKey="mes" />
+                        <YAxis />
+                        <Tooltip />
+                        <Legend />
+                        <Line type="monotone" dataKey="ventas_unidades" name="Ventas (u)" stroke="#0f766e" strokeWidth={2} />
+                        <Line type="monotone" dataKey="stock_total" name="Stock" stroke="#f97316" strokeWidth={2} connectNulls={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : null}
         </section>
       )}
     </div>
   )
 }
+
+
+
+
+
+
+
+
