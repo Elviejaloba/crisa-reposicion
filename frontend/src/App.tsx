@@ -260,6 +260,15 @@ export default function App() {
   const [rowLimit, setRowLimit] = useState<number>(200)
   const matrixRef = useRef<HTMLTableElement | null>(null)
 
+  const periodoVentas = useMemo(() => {
+    const end = new Date()
+    const start = new Date(end)
+    start.setDate(end.getDate() - Math.max(dias - 1, 0))
+    const fmt = (d: Date) =>
+      new Intl.DateTimeFormat('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }).format(d)
+    return `${fmt(start)} - ${fmt(end)}`
+  }, [dias])
+
   const nuestrasDisponibles = useMemo(
     () => SUC_NUESTRAS.filter((s) => sucursales.includes(s)),
     [sucursales]
@@ -492,8 +501,8 @@ export default function App() {
     cod_articulo: 'Codigo especifico del artículo',
     stock_sucursal: 'Stock disponible en la sucursal',
     stock_cdd: 'Stock disponible en CDD',
-    ventas_periodo: 'Ventas del periodo seleccionado',
-    venta_promedio_diaria: 'Ventas promedio por dia',
+    ventas_periodo: `Ventas del periodo seleccionado (${periodoVentas})`,
+    venta_promedio_diaria: `Ventas promedio por dia (${periodoVentas})`,
     cobertura_dias: 'Dias de cobertura: stock / venta diaria',
     meses_stock: 'Meses de cobertura: stock / venta mensual',
     alerta_stock: 'Estado de stock segun cobertura',
@@ -1152,6 +1161,7 @@ export default function App() {
             <div>
               <h2>Sugerencia de Distribución</h2>
               <p>Listado detallado por sucursal y artículo con sugerencias de envío.</p>
+              <small className="hint">Periodo de ventas: {periodoVentas}</small>
               {sugerenciaSortedRows.length > 0 ? (
                 <div className="mini-stats">
                   {Object.entries(sugerenciaResumen).map(([k, v]) => (
