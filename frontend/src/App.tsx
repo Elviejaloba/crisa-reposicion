@@ -254,7 +254,7 @@ export default function App() {
   const [kpiFamilias, setKpiFamilias] = useState<any[]>([])
   const [kpiFamiliasLoading, setKpiFamiliasLoading] = useState<boolean>(false)
   const [kpiFamiliasError, setKpiFamiliasError] = useState<string>('')
-  const [kpiFocus, setKpiFocus] = useState<boolean>(false)
+  const [kpiFocusPanel, setKpiFocusPanel] = useState<'ventas' | 'ranking' | 'familias' | null>(null)
   const [rechartsMod, setRechartsMod] = useState<RechartsModule | null>(null)
   const [sortCol, setSortCol] = useState<string>('CRISA CENTRAL')
   const [sortDesc, setSortDesc] = useState<boolean>(true)
@@ -1467,7 +1467,10 @@ export default function App() {
                 <h3>Ranking alertas criticas</h3>
                 <p>Quiebre de stock, Stock de Seguridad y Pto de Pedido.</p>
               </div>
-              <div className="kpi-ranking-total">Monto a reponer: {formatMoney(kpiRankingTotal)}</div>
+              <div className="kpi-ranking-actions">
+                <div className="kpi-ranking-total">Monto a reponer (costo reposición): {formatMoney(kpiRankingTotal)}</div>
+                <button className="focus-btn" type="button" onClick={() => setKpiFocusPanel('ranking')}>Modo enfoque</button>
+              </div>
             </div>
             {kpiRankingLoading ? (
               <div className="overlay-loading">
@@ -1517,7 +1520,7 @@ export default function App() {
               <div className="chart-card">
                 <div className="chart-head">
                   <div className="chart-title">Evolucion ventas y stock</div>
-                  <button className="focus-btn" type="button" onClick={() => setKpiFocus(true)}>Modo enfoque</button>
+                  <button className="focus-btn" type="button" onClick={() => setKpiFocusPanel('ventas')}>Modo enfoque</button>
                 </div>
                 <div className="chart-body">
                   <Recharts.ResponsiveContainer width="100%" height={300}>
@@ -1545,6 +1548,9 @@ export default function App() {
                   <span className="badge media">Stock de Seguridad</span>
                   <span className="badge alta">Pto de Pedido</span>
                 </div>
+              </div>
+              <div className="kpi-ranking-actions">
+                <button className="focus-btn" type="button" onClick={() => setKpiFocusPanel('familias')}>Modo enfoque</button>
               </div>
             </div>
             {kpiFamiliasLoading ? (
@@ -1581,37 +1587,96 @@ export default function App() {
             )}
           </div>
 
-          {kpiFocus ? (
-            <div className="focus-overlay" onClick={() => setKpiFocus(false)}>
+          {kpiFocusPanel ? (
+            <div className="focus-overlay" onClick={() => setKpiFocusPanel(null)}>
               <div className="focus-panel" onClick={(e) => e.stopPropagation()}>
                 <div className="focus-head">
                   <div>Modo enfoque</div>
-                  <button type="button" className="focus-close" onClick={() => setKpiFocus(false)}>Cerrar</button>
+                  <button type="button" className="focus-close" onClick={() => setKpiFocusPanel(null)}>Cerrar</button>
                 </div>
                 <div className="focus-body">
-                  {kpiLoading ? (
-                    <div className="overlay-loading">
-                      <div className="spinner"></div>
-                      <div className="overlay-text">Buscando datos...</div>
-                    </div>
-                  ) : kpiError ? (
-                    <div className="empty error">Error al cargar datos: {kpiError}</div>
-                  ) : !Recharts ? (
-                    <div className="overlay-loading">
-                      <div className="spinner"></div>
-                      <div className="overlay-text">Cargando gráficos...</div>
-                    </div>
+                  {kpiFocusPanel === 'ventas' ? (
+                    kpiLoading ? (
+                      <div className="overlay-loading">
+                        <div className="spinner"></div>
+                        <div className="overlay-text">Buscando datos...</div>
+                      </div>
+                    ) : kpiError ? (
+                      <div className="empty error">Error al cargar datos: {kpiError}</div>
+                    ) : !Recharts ? (
+                      <div className="overlay-loading">
+                        <div className="spinner"></div>
+                        <div className="overlay-text">Cargando gráficos...</div>
+                      </div>
+                    ) : (
+                      <Recharts.ResponsiveContainer width="100%" height={520}>
+                        <Recharts.LineChart data={kpiChart}>
+                          <Recharts.XAxis dataKey="mes" />
+                          <Recharts.YAxis />
+                          <Recharts.Tooltip />
+                          <Recharts.Legend />
+                          <Recharts.Line type="monotone" dataKey="ventas_unidades" name="Ventas (u)" stroke="#0f766e" strokeWidth={2} />
+                          <Recharts.Line type="monotone" dataKey="stock_total" name="Stock" stroke="#f97316" strokeWidth={2} connectNulls={false} />
+                        </Recharts.LineChart>
+                      </Recharts.ResponsiveContainer>
+                    )
+                  ) : kpiFocusPanel === 'ranking' ? (
+                    kpiRankingLoading ? (
+                      <div className="overlay-loading">
+                        <div className="spinner"></div>
+                        <div className="overlay-text">Calculando ranking...</div>
+                      </div>
+                    ) : kpiRankingError ? (
+                      <div className="empty error">Error al cargar ranking: {kpiRankingError}</div>
+                    ) : (
+                      <div className="ranking-list">
+                        {kpiRanking.map((r, idx) => {
+                          const monto = parseLocaleNumber(r.monto_reponer_costo) || 0
+                          const max = Math.max(...kpiRanking.map((x) => parseLocaleNumber(x.monto_reponer_costo) || 0), 1)
+                          const width = Math.round((monto / max) * 100)
+                          return (
+                            <div key={`${r.sucursal}-${idx}`} className="ranking-row">
+                              <div className="ranking-label">{String(r.sucursal || '')}</div>
+                              <div className="ranking-bar">
+                                <span style={{ width: `${width}%` }}></span>
+                              </div>
+                              <div className="ranking-value">{formatMoney(monto)}</div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
                   ) : (
-                    <Recharts.ResponsiveContainer width="100%" height={520}>
-                      <Recharts.LineChart data={kpiChart}>
-                        <Recharts.XAxis dataKey="mes" />
-                        <Recharts.YAxis />
-                        <Recharts.Tooltip />
-                        <Recharts.Legend />
-                        <Recharts.Line type="monotone" dataKey="ventas_unidades" name="Ventas (u)" stroke="#0f766e" strokeWidth={2} />
-                        <Recharts.Line type="monotone" dataKey="stock_total" name="Stock" stroke="#f97316" strokeWidth={2} connectNulls={false} />
-                      </Recharts.LineChart>
-                    </Recharts.ResponsiveContainer>
+                    kpiFamiliasLoading ? (
+                      <div className="overlay-loading">
+                        <div className="spinner"></div>
+                        <div className="overlay-text">Calculando familias...</div>
+                      </div>
+                    ) : kpiFamiliasError ? (
+                      <div className="empty error">Error al cargar familias: {kpiFamiliasError}</div>
+                    ) : !Recharts ? (
+                      <div className="overlay-loading">
+                        <div className="spinner"></div>
+                        <div className="overlay-text">Cargando gráficos...</div>
+                      </div>
+                    ) : (
+                      <Recharts.ResponsiveContainer width="100%" height={520}>
+                        <Recharts.BarChart data={kpiFamiliasChart} layout="vertical" margin={{ left: 10, right: 20 }}>
+                          <Recharts.XAxis type="number" tickFormatter={(v) => formatMoney(Number(v))} />
+                          <Recharts.YAxis
+                            type="category"
+                            dataKey="familia"
+                            width={160}
+                            tickFormatter={(v) => {
+                              const label = String(v || '')
+                              return label.length > 22 ? `${label.slice(0, 22)}...` : label
+                            }}
+                          />
+                          <Recharts.Tooltip formatter={(v: any) => formatMoney(Number(v))} />
+                          <Recharts.Bar dataKey="monto" fill="#f97316" radius={[4, 4, 4, 4]} />
+                        </Recharts.BarChart>
+                      </Recharts.ResponsiveContainer>
+                    )
                   )}
                 </div>
               </div>

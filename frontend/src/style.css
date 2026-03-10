@@ -1227,6 +1227,12 @@ button {
   gap: 10px;
   margin-bottom: 8px;
 }
+.kpi-ranking-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
 
 .kpi-ranking-head h3 {
   margin: 0;

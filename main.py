@@ -765,24 +765,27 @@ async def get_kpi_evolucion(
             filtro_hist_join = "WHERE " + " AND ".join(hist_where_parts)
 
         q_stock_hist = f"""
-            WITH ult_mes AS (
+            WITH daily AS (
                 SELECT
-                    DATE_TRUNC('month', snapshot_ts) AS mes,
-                    MAX(snapshot_ts) AS ts_ult
+                    snapshot_date::date AS dia,
+                    COALESCE(SUM(stock_1), 0) AS stock_total
                 FROM saldo_historial h
-                WHERE snapshot_ts IS NOT NULL
+                WHERE snapshot_date IS NOT NULL
                 {filtro_hist}
+                GROUP BY 1
+            ),
+            monthly AS (
+                SELECT
+                    DATE_TRUNC('month', dia) AS mes,
+                    AVG(stock_total) AS stock_total
+                FROM daily
                 GROUP BY 1
             )
             SELECT
-                EXTRACT(YEAR FROM u.mes)::int AS anio,
-                EXTRACT(MONTH FROM u.mes)::int AS mes_num,
-                COALESCE(SUM(h.stock_1), 0) AS stock_total
-            FROM ult_mes u
-            JOIN saldo_historial h
-              ON h.snapshot_ts = u.ts_ult
-            {filtro_hist_join}
-            GROUP BY 1,2
+                EXTRACT(YEAR FROM m.mes)::int AS anio,
+                EXTRACT(MONTH FROM m.mes)::int AS mes_num,
+                COALESCE(m.stock_total, 0) AS stock_total
+            FROM monthly m
             ORDER BY 1,2
         """
         try:
