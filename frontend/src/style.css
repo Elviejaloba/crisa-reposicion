@@ -791,6 +791,18 @@ button {
   text-align: right;
 }
 
+.matrix-need thead th {
+  padding: 10px 14px;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+}
+
+.matrix-sug thead th {
+  padding: 10px 14px;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+}
+
 .matrix thead th.text {
   text-align: left;
 }

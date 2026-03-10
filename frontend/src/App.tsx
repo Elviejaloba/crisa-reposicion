@@ -1087,7 +1087,7 @@ export default function App() {
             ) : matrix.columns.length === 0 ? (
               <div className="empty">Sin datos para mostrar con los filtros seleccionados.</div>
             ) : (
-              <table className="matrix" ref={matrixRef}>
+              <table className="matrix matrix-need" ref={matrixRef}>
                 <thead>
                   <tr>
                     {displayColumns.map((c, idx) => {
@@ -1213,7 +1213,7 @@ export default function App() {
             ) : sugerencia.rows.length === 0 ? (
               <div className="empty">Sin sugerencias para el periodo seleccionado.</div>
             ) : (
-              <table className="matrix">
+              <table className="matrix matrix-sug">
                 <thead>
                   <tr>
                     {sugerenciaColumns.map((c) => {
