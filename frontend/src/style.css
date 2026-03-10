@@ -47,6 +47,7 @@ button {
   border: 1px solid var(--border);
   border-radius: 18px;
   box-shadow: var(--shadow);
+  position: relative;
 }
 
 .logo {
@@ -90,46 +91,43 @@ button {
 }
 
 .sync {
-  text-align: right;
+  text-align: center;
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: center;
   gap: 4px;
   padding: 10px 12px;
   border-radius: 12px;
   border: 1px solid var(--border);
   background: #f8fafc;
-  min-width: 180px;
-}
-
-.sync-time-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  justify-content: center;
+  min-width: 160px;
 }
 
 .sync-time {
   font-weight: 700;
-  font-size: 16px;
+  font-size: 15px;
+  width: 100%;
+  text-align: center;
 }
 
 .sync-label {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--muted);
   width: 100%;
   text-align: center;
 }
 
 .version-badge {
-  font-size: 10px;
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-size: 8px;
   font-weight: 600;
-  color: #334155;
-  background: #e2e8f0;
-  border: 1px solid #cbd5f5;
+  color: #475569;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
   border-radius: 999px;
-  padding: 2px 6px;
+  padding: 1px 5px;
   line-height: 1;
   white-space: nowrap;
 }

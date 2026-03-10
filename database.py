@@ -991,7 +991,9 @@ def get_matriz_distribucion(
             SELECT cod_articulo, sucursal,
                    SUM(stock_1) AS stock_sucursal,
                    MAX(cod_base) AS cod_base,
-                   MAX(familia) AS familia
+                   MAX(familia) AS familia,
+                   MAX(descripcion) AS descripcion,
+                   MAX(sinonimo) AS sinonimo
             FROM saldo
             GROUP BY 1,2
         ),
@@ -1039,7 +1041,9 @@ def get_matriz_distribucion(
                     ELSE 'OK'
                 END AS alerta_stock,
                 COALESCE(cdd.stock_cdd, 0) AS stock_cdd,
-                COALESCE(s.familia, '') AS familia
+                COALESCE(s.familia, '') AS familia,
+                COALESCE(s.descripcion, a.descripcion, '') AS descripcion,
+                COALESCE(s.sinonimo, a.sinonimo, '') AS sinonimo
             FROM base b
             LEFT JOIN stock_s s ON s.cod_articulo = b.cod_articulo AND s.sucursal = b.sucursal
             LEFT JOIN ventas_p v ON v.cod_articulo = b.cod_articulo AND v.sucursal = b.sucursal
@@ -1091,16 +1095,16 @@ def get_matriz_distribucion(
             p = str(p).strip().upper()
             if not p:
                 continue
-            cod_filters.append("(UPPER(cod_articulo) LIKE %s OR UPPER(cod_base) LIKE %s)")
-            params.extend([f"{p}%", f"{p}%"])
+            cod_filters.append("(UPPER(cod_articulo) LIKE %s OR UPPER(cod_base) LIKE %s OR UPPER(descripcion) LIKE %s OR UPPER(sinonimo) LIKE %s)")
+            params.extend([f"{p}%", f"{p}%", f"{p}%", f"{p}%"])
 
     if codigos_contains and len(codigos_contains) > 0:
         for c in codigos_contains:
             c = str(c).strip().upper()
             if not c:
                 continue
-            cod_filters.append("(UPPER(cod_articulo) LIKE %s OR UPPER(cod_base) LIKE %s)")
-            params.extend([f"%{c}%", f"%{c}%"])
+            cod_filters.append("(UPPER(cod_articulo) LIKE %s OR UPPER(cod_base) LIKE %s OR UPPER(descripcion) LIKE %s OR UPPER(sinonimo) LIKE %s)")
+            params.extend([f"%{c}%", f"%{c}%", f"%{c}%", f"%{c}%"])
 
     if cod_filters:
         query += " AND (" + " OR ".join(cod_filters) + ")"
@@ -1168,7 +1172,9 @@ def get_sugerencia_distribucion(
             SELECT cod_articulo, {sucursal_case} AS sucursal,
                    SUM(stock_1) AS stock_sucursal,
                    MAX(familia) AS familia,
-                   MAX(desc_familia) AS desc_familia
+                   MAX(desc_familia) AS desc_familia,
+                   MAX(descripcion) AS descripcion,
+                   MAX(sinonimo) AS sinonimo
             FROM saldo
             GROUP BY 1,2
         ),
@@ -1231,7 +1237,9 @@ def get_sugerencia_distribucion(
                 COALESCE(cdd.stock_cdd, 0) AS stock_cdd,
                 COALESCE(p.precio, 0) AS precio_unitario,
                 COALESCE(c.costo_reposicion, 0) AS costo_unitario,
-                COALESCE(s.familia, '') AS familia
+                COALESCE(s.familia, '') AS familia,
+                COALESCE(s.descripcion, a.descripcion, '') AS descripcion,
+                COALESCE(s.sinonimo, a.sinonimo, '') AS sinonimo
             FROM base b
             LEFT JOIN stock_s s ON s.cod_articulo = b.cod_articulo AND s.sucursal = b.sucursal
             LEFT JOIN ventas_p v ON v.cod_articulo = b.cod_articulo AND v.sucursal = b.sucursal
@@ -1316,16 +1324,16 @@ def get_sugerencia_distribucion(
             p = str(p).strip().upper()
             if not p:
                 continue
-            cod_filters.append("(UPPER(cod_articulo) LIKE %s OR UPPER(cod_base) LIKE %s)")
-            params.extend([f"{p}%", f"{p}%"])
+            cod_filters.append("(UPPER(cod_articulo) LIKE %s OR UPPER(cod_base) LIKE %s OR UPPER(descripcion) LIKE %s OR UPPER(sinonimo) LIKE %s)")
+            params.extend([f"{p}%", f"{p}%", f"{p}%", f"{p}%"])
 
     if codigos_contains and len(codigos_contains) > 0:
         for c in codigos_contains:
             c = str(c).strip().upper()
             if not c:
                 continue
-            cod_filters.append("(UPPER(cod_articulo) LIKE %s OR UPPER(cod_base) LIKE %s)")
-            params.extend([f"%{c}%", f"%{c}%"])
+            cod_filters.append("(UPPER(cod_articulo) LIKE %s OR UPPER(cod_base) LIKE %s OR UPPER(descripcion) LIKE %s OR UPPER(sinonimo) LIKE %s)")
+            params.extend([f"%{c}%", f"%{c}%", f"%{c}%", f"%{c}%"])
 
     if cod_filters:
         query += " AND (" + " OR ".join(cod_filters) + ")"
@@ -1371,7 +1379,9 @@ def get_kpi_alertas_criticas(
             SELECT cod_articulo, sucursal,
                    SUM(stock_1) AS stock_sucursal,
                    MAX(familia) AS familia,
-                   MAX(desc_familia) AS desc_familia
+                   MAX(desc_familia) AS desc_familia,
+                   MAX(descripcion) AS descripcion,
+                   MAX(sinonimo) AS sinonimo
             FROM saldo
             GROUP BY 1,2
         ),
@@ -1394,7 +1404,9 @@ def get_kpi_alertas_criticas(
                 END AS meses_stock,
                 (COALESCE(v.ventas_periodo, 0) - COALESCE(s.stock_sucursal, 0)) AS necesidad,
                 COALESCE(c.costo_reposicion, 0) AS costo_unitario,
-                COALESCE(s.familia, '') AS familia
+                COALESCE(s.familia, '') AS familia,
+                COALESCE(s.descripcion, a.descripcion, '') AS descripcion,
+                COALESCE(s.sinonimo, a.sinonimo, '') AS sinonimo
             FROM base b
             LEFT JOIN stock_s s ON s.cod_articulo = b.cod_articulo AND s.sucursal = b.sucursal
             LEFT JOIN ventas_p v ON v.cod_articulo = b.cod_articulo AND v.sucursal = b.sucursal
@@ -1445,16 +1457,16 @@ def get_kpi_alertas_criticas(
             p = str(p).strip().upper()
             if not p:
                 continue
-            cod_filters.append("(UPPER(cod_articulo) LIKE %s OR UPPER(cod_base) LIKE %s)")
-            params.extend([f"{p}%", f"{p}%"])
+            cod_filters.append("(UPPER(cod_articulo) LIKE %s OR UPPER(cod_base) LIKE %s OR UPPER(descripcion) LIKE %s OR UPPER(sinonimo) LIKE %s)")
+            params.extend([f"{p}%", f"{p}%", f"{p}%", f"{p}%"])
 
     if codigos_contains and len(codigos_contains) > 0:
         for c in codigos_contains:
             c = str(c).strip().upper()
             if not c:
                 continue
-            cod_filters.append("(UPPER(cod_articulo) LIKE %s OR UPPER(cod_base) LIKE %s)")
-            params.extend([f"%{c}%", f"%{c}%"])
+            cod_filters.append("(UPPER(cod_articulo) LIKE %s OR UPPER(cod_base) LIKE %s OR UPPER(descripcion) LIKE %s OR UPPER(sinonimo) LIKE %s)")
+            params.extend([f"%{c}%", f"%{c}%", f"%{c}%", f"%{c}%"])
 
     if cod_filters:
         query += " AND (" + " OR ".join(cod_filters) + ")"
@@ -1510,7 +1522,9 @@ def get_kpi_familias_reponer(
             SELECT cod_articulo, sucursal,
                    SUM(stock_1) AS stock_sucursal,
                    MAX(familia) AS familia,
-                   MAX(desc_familia) AS desc_familia
+                   MAX(desc_familia) AS desc_familia,
+                   MAX(descripcion) AS descripcion,
+                   MAX(sinonimo) AS sinonimo
             FROM saldo
             GROUP BY 1,2
         ),
@@ -1533,10 +1547,13 @@ def get_kpi_familias_reponer(
                     ELSE COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo, 0) / %s) * 30, 0)
                 END AS meses_stock,
                 (COALESCE(v.ventas_periodo, 0) - COALESCE(s.stock_sucursal, 0)) AS necesidad,
-                COALESCE(c.costo_reposicion, 0) AS costo_unitario
+                COALESCE(c.costo_reposicion, 0) AS costo_unitario,
+                COALESCE(s.descripcion, a.descripcion, '') AS descripcion,
+                COALESCE(s.sinonimo, a.sinonimo, '') AS sinonimo
             FROM base b
             LEFT JOIN stock_s s ON s.cod_articulo = b.cod_articulo AND s.sucursal = b.sucursal
             LEFT JOIN ventas_p v ON v.cod_articulo = b.cod_articulo AND v.sucursal = b.sucursal
+            LEFT JOIN articulos a ON a.cod_articulo = b.cod_articulo
             LEFT JOIN costos c ON c.cod_articulo = b.cod_articulo
         ),
         calc AS (
@@ -1582,16 +1599,16 @@ def get_kpi_familias_reponer(
             p = str(p).strip().upper()
             if not p:
                 continue
-            cod_filters.append("UPPER(cod_articulo) LIKE %s")
-            params.extend([f"{p}%"])
+            cod_filters.append("(UPPER(cod_articulo) LIKE %s OR UPPER(descripcion) LIKE %s OR UPPER(sinonimo) LIKE %s)")
+            params.extend([f"{p}%", f"{p}%", f"{p}%"])
 
     if codigos_contains and len(codigos_contains) > 0:
         for c in codigos_contains:
             c = str(c).strip().upper()
             if not c:
                 continue
-            cod_filters.append("UPPER(cod_articulo) LIKE %s")
-            params.extend([f"%{c}%"])
+            cod_filters.append("(UPPER(cod_articulo) LIKE %s OR UPPER(descripcion) LIKE %s OR UPPER(sinonimo) LIKE %s)")
+            params.extend([f"%{c}%", f"%{c}%", f"%{c}%"])
 
     if cod_filters:
         query += " AND (" + " OR ".join(cod_filters) + ")"

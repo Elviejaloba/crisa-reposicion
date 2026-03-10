@@ -893,12 +893,10 @@ export default function App() {
           <p>Distribución basada en venta y stock real.</p>
         </div>
         <div className="sync">
-          <div className="sync-time-row">
-            <div className="sync-time">{formatSync(String(lastSyncLabel))}</div>
-            <span className="version-badge">v{APP_VERSION}</span>
-          </div>
+          <div className="sync-time">{formatSync(String(lastSyncLabel))}</div>
           <div className="sync-label">Última actualización</div>
         </div>
+        <span className="version-badge">v{APP_VERSION}</span>
       </div>
 
       <section className="filters">
@@ -913,7 +911,7 @@ export default function App() {
             onChange={setSelSuc}
           />
           <div className="field">
-            <label>Selecciona código base / artículo</label>
+            <label>Selecciona código / descripción / sinónimo</label>
             <input
               value={codigoInput}
               onChange={(e) => {
@@ -929,9 +927,9 @@ export default function App() {
                   setCodigo(codigoInput.trim())
                 }
               }}
-              placeholder="Ej: TA148L* o TA148L01 (separá con coma)"
+              placeholder="Ej: TA148L* , REMERA , SINONIMO (separá con coma)"
             />
-            <small className="hint">Presioná Enter para aplicar</small>
+            <small className="hint">Podés buscar por código, descripción o sinónimo. Presioná Enter para aplicar.</small>
           </div>
           <MultiPicker
             label="Selecciona familia"
