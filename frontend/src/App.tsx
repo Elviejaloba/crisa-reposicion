@@ -17,7 +17,7 @@ const APP_VERSION =
   (import.meta as any).env?.VITE_GIT_SHA ||
   'dev'
 
-const FAMILIAS = ['AR', 'BL', 'MC', 'ME', 'MU', 'OT', 'PR', 'PV', 'SI', 'TA']
+const DEFAULT_FAMILIAS = ['AR', 'BL', 'MC', 'ME', 'MU', 'OT', 'PR', 'PV', 'SI', 'TA']
 const DIAS = [15, 30, 60]
 const ALERTAS = [
   { value: 'Quiebre de stock', label: 'Quiebre de stock', tone: 'danger' },
@@ -230,6 +230,7 @@ export default function App() {
   const [dias, setDias] = useState<number>(30)
   const [codigoInput, setCodigoInput] = useState<string>('')
   const [codigo, setCodigo] = useState<string>('')
+  const [familias, setFamilias] = useState<string[]>(DEFAULT_FAMILIAS)
   const [matrix, setMatrix] = useState<MatrixResponse>({ columns: [], rows: [], source_rows: 0 })
   const [matrixLoading, setMatrixLoading] = useState<boolean>(false)
   const [matrixError, setMatrixError] = useState<string>('')
@@ -295,6 +296,14 @@ export default function App() {
       .then((r) => r.json())
       .then((d) => setSucursales(d.sucursales || []))
       .catch(() => setSucursales([]))
+
+    fetch(`${API_BASE}/familias`)
+      .then((r) => r.json())
+      .then((d) => {
+        const list = (d?.familias || []).filter((f: string) => f)
+        setFamilias(list.length ? list : DEFAULT_FAMILIAS)
+      })
+      .catch(() => setFamilias(DEFAULT_FAMILIAS))
   }, [])
 
   useEffect(() => {
@@ -936,7 +945,7 @@ export default function App() {
             emptyLabel="Todas las familias"
             allLabel="Todas las familias"
             searchPlaceholder="Buscar familia..."
-            options={FAMILIAS}
+            options={familias}
             value={selFamilias}
             onChange={setSelFamilias}
           />

@@ -942,8 +942,14 @@ def get_familias():
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
-        SELECT DISTINCT familia, desc_familia 
-        FROM metricas 
+        SELECT DISTINCT familia, desc_familia
+        FROM (
+            SELECT UPPER(TRIM(familia)) AS familia, desc_familia FROM saldo
+            UNION
+            SELECT UPPER(TRIM(familia)) AS familia, desc_familia FROM metricas
+            UNION
+            SELECT UPPER(TRIM(familia)) AS familia, NULL AS desc_familia FROM articulos
+        ) t
         WHERE familia IS NOT NULL AND familia != ''
         ORDER BY familia
     """)

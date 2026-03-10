@@ -421,6 +421,15 @@ async def get_data(sucursal: Optional[str] = None, alerta: Optional[str] = None)
 async def get_sucursales():
     return {"sucursales": db.get_sucursales()}
 
+@app.get("/familias")
+async def get_familias():
+    data = db.get_familias()
+    familias = []
+    for fam, _desc in data:
+        if fam and fam not in familias:
+            familias.append(fam)
+    return {"familias": familias}
+
 @app.get("/alertas")
 async def get_alertas():
     return {"alertas": db.get_alertas_count()}
