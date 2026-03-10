@@ -10,10 +10,18 @@ from pydantic import BaseModel
 from typing import List, Optional
 import pandas as pd
 from datetime import datetime
+try:
+    from zoneinfo import ZoneInfo
+    AR_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
+except Exception:
+    AR_TZ = None
 import database as db
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("api")
+
+def now_ar():
+    return datetime.now(AR_TZ) if AR_TZ else datetime.now()
 
 # Asegurar estructura de base al iniciar servicio API (sin bloquear el arranque)
 app = FastAPI(title="Sistema de Análisis Comercial")
@@ -312,7 +320,7 @@ def calcular_metricas(df_saldo: pd.DataFrame, df_ventas: pd.DataFrame) -> pd.Dat
 @app.post("/sync")
 async def sync_data(data: SyncData):
     try:
-        timestamp = datetime.now()
+        timestamp = now_ar()
         
         # Comando para limpiar tablas
         if data.reset:
@@ -960,7 +968,7 @@ async def get_quality():
 async def recalcular_metricas():
     """Recalcular mÃ©tricas desde los datos existentes"""
     try:
-        timestamp = datetime.now()
+        timestamp = now_ar()
         
         # Obtener datos actuales
         saldos = db.get_all_saldos()
