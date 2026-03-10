@@ -1304,13 +1304,17 @@ export default function App() {
             <div className="sort-box">
               <div className="sort-meta">
                 <div className="hint">Filas: {sugerenciaSortedRows.length}</div>
-                <button
-                  type="button"
-                  className={`toggle-chip ${sugOnlyPositive ? 'on' : ''}`}
-                  onClick={() => setSugOnlyPositive((v) => !v)}
-                >
-                  Solo sugerencias &gt; 0
-                </button>
+                <div className="toggle-group">
+                  <button
+                    type="button"
+                    className={`toggle-chip ${sugOnlyPositive ? 'on' : ''}`}
+                    onClick={() => setSugOnlyPositive((v) => !v)}
+                    title="Muestra solo artículos con necesidad positiva (faltantes)"
+                  >
+                    Mostrar solo faltantes
+                  </button>
+                  <span className="toggle-hint">Oculta stock 0 o sobrante</span>
+                </div>
                 <div className="sort-item">
                   <label>Filas a mostrar</label>
                   <select value={sugRowLimit} onChange={(e) => setSugRowLimit(Number(e.target.value))}>
