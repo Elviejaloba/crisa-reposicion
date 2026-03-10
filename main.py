@@ -9,7 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 import pandas as pd
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, date, timezone, timedelta
+import calendar
 try:
     from zoneinfo import ZoneInfo
     AR_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
@@ -23,6 +24,35 @@ logger = logging.getLogger("api")
 def now_ar():
     # Guardar sin tzinfo para evitar que Postgres convierta a UTC en TIMESTAMP sin zona
     return datetime.now(AR_TZ).replace(tzinfo=None)
+
+def _temporada_range(temporada: Optional[str]):
+    if not temporada:
+        return None
+    t = temporada.strip().lower()
+    today = now_ar().date()
+    year = today.year
+    if t == "invierno":
+        start = date(year, 3, 1)
+        end = date(year, 8, 31)
+        if today < start:
+            start = date(year - 1, 3, 1)
+            end = date(year - 1, 8, 31)
+        if today < end:
+            end = today
+        return start, end
+    if t == "verano":
+        if today.month >= 9:
+            start = date(year, 9, 1)
+            feb_last = calendar.monthrange(year + 1, 2)[1]
+            end = date(year + 1, 2, feb_last)
+        else:
+            start = date(year - 1, 9, 1)
+            feb_last = calendar.monthrange(year, 2)[1]
+            end = date(year, 2, feb_last)
+        if today < end:
+            end = today
+        return start, end
+    return None
 
 # Asegurar estructura de base al iniciar servicio API (sin bloquear el arranque)
 app = FastAPI(title="Sistema de Análisis Comercial")
@@ -498,6 +528,7 @@ async def get_matriz_distribucion(
     sucursales: Optional[str] = None,
     familias: Optional[str] = None,
     codigos: Optional[str] = None,
+    temporada: Optional[str] = None,
     limit: int = 200,
 ):
     """
@@ -511,6 +542,9 @@ async def get_matriz_distribucion(
     cod_prefix = [c[:-1] for c in cod_list if c.endswith("*")]
     cod_contains = [c for c in cod_list if not c.endswith("*")]
 
+    rango_temporada = _temporada_range(temporada)
+    start_date, end_date = rango_temporada if rango_temporada else (None, None)
+
     data = db.get_matriz_distribucion(
         dias_proyeccion=dias,
         familias=None,
@@ -519,6 +553,8 @@ async def get_matriz_distribucion(
         prefijos_familia=fam_list if fam_list else None,
         codigos_prefix=cod_prefix if cod_prefix else None,
         codigos_contains=cod_contains if cod_contains else None,
+        start_date=start_date,
+        end_date=end_date,
     )
     if not data:
         return {"columns": [], "rows": [], "source_rows": 0}
@@ -597,6 +633,7 @@ async def get_sugerencia_distribucion(
     sucursales: Optional[str] = None,
     familias: Optional[str] = None,
     codigos: Optional[str] = None,
+    temporada: Optional[str] = None,
     solo_sugeridos: Optional[bool] = True,
     lista_precio: Optional[str] = None,
 ):
@@ -614,6 +651,9 @@ async def get_sugerencia_distribucion(
                 if suc == principal:
                     sucursales_incluir.add(excluida)
 
+    rango_temporada = _temporada_range(temporada)
+    start_date, end_date = rango_temporada if rango_temporada else (None, None)
+
     data = db.get_sugerencia_distribucion(
         dias_proyeccion=dias,
         familias=None,
@@ -625,6 +665,8 @@ async def get_sugerencia_distribucion(
         alertas=alertas_list if alertas_list else None,
         solo_sugeridos=solo_sugeridos,
         lista_precio=lista_precio,
+        start_date=start_date,
+        end_date=end_date,
     )
     if not data:
         return {"rows": [], "total": 0}
@@ -846,6 +888,7 @@ async def get_kpi_alertas_criticas(
     sucursales: Optional[str] = None,
     familias: Optional[str] = None,
     codigos: Optional[str] = None,
+    temporada: Optional[str] = None,
 ):
     suc_list = _parse_csv_param(sucursales)
     fam_list = [f.upper() for f in _parse_csv_param(familias)]
@@ -853,12 +896,17 @@ async def get_kpi_alertas_criticas(
     cod_prefix = [c[:-1] for c in cod_list if c.endswith("*")]
     cod_contains = [c for c in cod_list if not c.endswith("*")]
 
+    rango_temporada = _temporada_range(temporada)
+    start_date, end_date = rango_temporada if rango_temporada else (None, None)
+
     data = db.get_kpi_alertas_criticas(
         dias_proyeccion=dias,
         sucursales=suc_list if suc_list else None,
         prefijos_familia=fam_list if fam_list else None,
         codigos_prefix=cod_prefix if cod_prefix else None,
         codigos_contains=cod_contains if cod_contains else None,
+        start_date=start_date,
+        end_date=end_date,
     )
     total_unidades = sum([r.get("unidades_sugeridas") or 0 for r in data])
     total_monto = sum([r.get("monto_reponer_costo") or 0 for r in data])
@@ -874,6 +922,7 @@ async def get_kpi_familias_reponer(
     sucursales: Optional[str] = None,
     familias: Optional[str] = None,
     codigos: Optional[str] = None,
+    temporada: Optional[str] = None,
 ):
     suc_list = _parse_csv_param(sucursales)
     fam_list = [f.upper() for f in _parse_csv_param(familias)]
@@ -881,12 +930,17 @@ async def get_kpi_familias_reponer(
     cod_prefix = [c[:-1] for c in cod_list if c.endswith("*")]
     cod_contains = [c for c in cod_list if not c.endswith("*")]
 
+    rango_temporada = _temporada_range(temporada)
+    start_date, end_date = rango_temporada if rango_temporada else (None, None)
+
     data = db.get_kpi_familias_reponer(
         dias_proyeccion=dias,
         sucursales=suc_list if suc_list else None,
         prefijos_familia=fam_list if fam_list else None,
         codigos_prefix=cod_prefix if cod_prefix else None,
         codigos_contains=cod_contains if cod_contains else None,
+        start_date=start_date,
+        end_date=end_date,
     )
     return {"rows": data}
 

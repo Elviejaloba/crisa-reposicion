@@ -230,6 +230,7 @@ export default function App() {
   const [dias, setDias] = useState<number>(30)
   const [codigoInput, setCodigoInput] = useState<string>('')
   const [codigo, setCodigo] = useState<string>('')
+  const [temporada, setTemporada] = useState<string>('')
   const [familias, setFamilias] = useState<string[]>(DEFAULT_FAMILIAS)
   const [matrix, setMatrix] = useState<MatrixResponse>({ columns: [], rows: [], source_rows: 0 })
   const [matrixLoading, setMatrixLoading] = useState<boolean>(false)
@@ -260,15 +261,6 @@ export default function App() {
   const [rowLimit, setRowLimit] = useState<number>(200)
   const matrixRef = useRef<HTMLTableElement | null>(null)
 
-  const periodoVentas = useMemo(() => {
-    const end = new Date()
-    const start = new Date(end)
-    start.setDate(end.getDate() - Math.max(dias - 1, 0))
-    const fmt = (d: Date) =>
-      new Intl.DateTimeFormat('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }).format(d)
-    return `${fmt(start)} - ${fmt(end)}`
-  }, [dias])
-
   const nuestrasDisponibles = useMemo(
     () => SUC_NUESTRAS.filter((s) => sucursales.includes(s)),
     [sucursales]
@@ -294,7 +286,46 @@ export default function App() {
     setCodigoInput('')
     setSelAlertas(ALERTAS.map((a) => a.value))
     setDias(30)
+    setTemporada('')
   }
+
+  const periodoVentas = useMemo(() => {
+    const today = new Date()
+    const fmt = (d: Date) =>
+      new Intl.DateTimeFormat('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }).format(d)
+    if (temporada) {
+      const year = today.getFullYear()
+      if (temporada === 'invierno') {
+        let start = new Date(year, 2, 1)
+        let end = new Date(year, 7, 31)
+        if (today < start) {
+          start = new Date(year - 1, 2, 1)
+          end = new Date(year - 1, 7, 31)
+        }
+        if (today < end) end = today
+        return `${fmt(start)} - ${fmt(end)}`
+      }
+      if (temporada === 'verano') {
+        let start: Date
+        let end: Date
+        if (today.getMonth() >= 8) {
+          start = new Date(year, 8, 1)
+          const febLast = new Date(year + 1, 2, 0).getDate()
+          end = new Date(year + 1, 1, febLast)
+        } else {
+          start = new Date(year - 1, 8, 1)
+          const febLast = new Date(year, 2, 0).getDate()
+          end = new Date(year, 1, febLast)
+        }
+        if (today < end) end = today
+        return `${fmt(start)} - ${fmt(end)}`
+      }
+    }
+    const end = new Date(today)
+    const start = new Date(today)
+    start.setDate(end.getDate() - Math.max(dias - 1, 0))
+    return `${fmt(start)} - ${fmt(end)}`
+  }, [dias, temporada])
   useEffect(() => {
     fetch(`${API_BASE}/sync-info`)
       .then((r) => r.json())
@@ -335,9 +366,10 @@ export default function App() {
     if (selSuc.length) params.set('sucursales', selSuc.join(','))
     if (selFamilias.length) params.set('familias', selFamilias.join(','))
     if (codigo.trim()) params.set('codigos', codigo.trim())
+    if (temporada) params.set('temporada', temporada)
     params.set('limit', String(rowLimit))
     return params.toString()
-  }, [dias, selAlertas, selSuc, selFamilias, codigo, rowLimit])
+  }, [dias, selAlertas, selSuc, selFamilias, codigo, rowLimit, temporada])
 
   const [queryMatrix, setQueryMatrix] = useState(queryMatrixRaw)
 
@@ -430,7 +462,7 @@ export default function App() {
       window.clearTimeout(timeoutId)
       controller.abort()
     }
-  }, [tab, dias, sugRowLimit, sugOnlyPositive, selAlertas, selSuc, selFamilias, codigo])
+  }, [tab, dias, sugRowLimit, sugOnlyPositive, selAlertas, selSuc, selFamilias, codigo, temporada])
 
   useEffect(() => {
     if (!sugerencia.rows.length) return
@@ -595,6 +627,7 @@ export default function App() {
     if (selSuc.length) params.set('sucursales', selSuc.join(','))
     if (selFamilias.length) params.set('familias', selFamilias.join(','))
     if (codigo.trim()) params.set('codigos', codigo.trim())
+    if (temporada) params.set('temporada', temporada)
     setKpiRankingLoading(true)
     setKpiRankingError('')
     const controller = new AbortController()
@@ -629,7 +662,7 @@ export default function App() {
       window.clearTimeout(timeoutId)
       controller.abort()
     }
-  }, [tab, dias, selSuc, selFamilias, codigo])
+  }, [tab, dias, selSuc, selFamilias, codigo, temporada])
 
   useEffect(() => {
     if (tab !== 'kpi') return
@@ -638,6 +671,7 @@ export default function App() {
     if (selSuc.length) params.set('sucursales', selSuc.join(','))
     if (selFamilias.length) params.set('familias', selFamilias.join(','))
     if (codigo.trim()) params.set('codigos', codigo.trim())
+    if (temporada) params.set('temporada', temporada)
     setKpiFamiliasLoading(true)
     setKpiFamiliasError('')
     const controller = new AbortController()
@@ -668,7 +702,7 @@ export default function App() {
       window.clearTimeout(timeoutId)
       controller.abort()
     }
-  }, [tab, dias, selSuc, selFamilias, codigo])
+  }, [tab, dias, selSuc, selFamilias, codigo, temporada])
 
   const displayRows = useMemo(() => {
     const rows = [...(matrix.rows || [])]
@@ -967,6 +1001,7 @@ export default function App() {
             <span className="mini-pill">Familias: {summarizeList(selFamilias, 'Todas')}</span>
             <span className="mini-pill">Código: {codigo ? codigo : 'Todos'}</span>
             <span className="mini-pill">Alertas: {selAlertas.length === 0 ? 'Ninguna' : selAlertas.length === ALERTAS.length ? 'Todas' : summarizeList(selAlertas, 'Todas')}</span>
+            <span className="mini-pill">Temporada: {temporada ? (temporada === 'invierno' ? 'Invierno' : 'Verano') : 'Todas'}</span>
             <span className="mini-pill">Días: {dias}</span>
             <button type="button" className="mini-pill action" onClick={clearFilters}>Limpiar filtros</button>
           </div>
@@ -981,6 +1016,25 @@ export default function App() {
                   {d} días
                 </button>
               ))}
+            </div>
+            <div className="season-row">
+              <div className="season-label">Temporada de ventas</div>
+              <div className="chip-row">
+                <button
+                  type="button"
+                  className={`chip info ${temporada === 'invierno' ? 'on' : ''}`}
+                  onClick={() => setTemporada(temporada === 'invierno' ? '' : 'invierno')}
+                >
+                  Invierno
+                </button>
+                <button
+                  type="button"
+                  className={`chip warning ${temporada === 'verano' ? 'on' : ''}`}
+                  onClick={() => setTemporada(temporada === 'verano' ? '' : 'verano')}
+                >
+                  Verano
+                </button>
+              </div>
             </div>
           </div>
           <div className="field">
@@ -1161,7 +1215,7 @@ export default function App() {
             <div>
               <h2>Sugerencia de Distribución</h2>
               <p>Listado detallado por sucursal y artículo con sugerencias de envío.</p>
-              <small className="hint">Periodo de ventas: {periodoVentas}</small>
+              <div className="period-pill">Periodo de ventas: {periodoVentas}</div>
               {sugerenciaSortedRows.length > 0 ? (
                 <div className="mini-stats">
                   {Object.entries(sugerenciaResumen).map(([k, v]) => (

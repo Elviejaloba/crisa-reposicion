@@ -385,6 +385,18 @@ button {
   border-radius: 999px;
 }
 
+.season-row {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.season-label {
+  font-size: 11px;
+  color: var(--muted);
+}
+
 .segmented button {
   border: none;
   background: transparent;
@@ -421,6 +433,19 @@ button {
   background: #f8fafc;
   font-size: 11px;
   color: #475569;
+}
+.period-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #0f172a;
+  background: #e0f2fe;
+  border: 1px solid #bae6fd;
 }
 .mini-pill.action {
   cursor: pointer;
@@ -774,7 +799,7 @@ button {
 
 .matrix {
   border-collapse: collapse;
-  width: max-content;
+  width: 100%;
   table-layout: auto;
   background: white;
 }
@@ -788,7 +813,8 @@ button {
   letter-spacing: 0.06em;
   padding: 6px 8px;
   border-bottom: 1px solid var(--border);
-  text-align: right;
+  text-align: center;
+  white-space: normal;
 }
 
 .matrix-need thead th {
@@ -811,7 +837,7 @@ button {
   width: 100%;
   display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: center;
   gap: 8px;
   border: none;
   background: transparent;
@@ -819,10 +845,12 @@ button {
   font: inherit;
   color: inherit;
   cursor: pointer;
+  flex-wrap: wrap;
+  text-align: center;
 }
 
 .matrix thead th.text .th-btn {
-  justify-content: flex-start;
+  justify-content: center;
 }
 
 .sort-caret {

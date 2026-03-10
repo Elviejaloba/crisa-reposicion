@@ -8,10 +8,20 @@ try:
 except Exception:
     pass
 from psycopg2.extras import RealDictCursor, execute_values
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import Optional, List
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
+
+def _resolve_period(dias_proyeccion: int, start_date: Optional[date] = None, end_date: Optional[date] = None):
+    if start_date and end_date:
+        start = start_date
+        end = end_date
+    else:
+        end = datetime.now().date()
+        start = end - timedelta(days=dias_proyeccion - 1)
+    dias = max((end - start).days + 1, 1)
+    return start, end, dias
 
 SUCURSALES_UNIFICAR = {
     "LA TIJERA MAYORISTA MENDOZA": "LA TIJERA MENDOZA",
@@ -979,12 +989,13 @@ def get_matriz_distribucion(
     prefijos_familia: Optional[List] = None,
     codigos_prefix: Optional[List] = None,
     codigos_contains: Optional[List] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
 ):
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
-    start_date = datetime.now().date() - timedelta(days=dias_proyeccion - 1)
-    end_date = datetime.now().date()
+    start_date, end_date, dias_periodo = _resolve_period(dias_proyeccion, start_date, end_date)
 
     query = """
         WITH ventas_p AS (
@@ -1062,16 +1073,16 @@ def get_matriz_distribucion(
     params = [
         start_date,
         end_date,
-        dias_proyeccion,
-        dias_proyeccion,
-        dias_proyeccion,
-        dias_proyeccion,
-        dias_proyeccion,
-        dias_proyeccion,
-        dias_proyeccion,
-        dias_proyeccion,
-        dias_proyeccion,
-        dias_proyeccion,
+        dias_periodo,
+        dias_periodo,
+        dias_periodo,
+        dias_periodo,
+        dias_periodo,
+        dias_periodo,
+        dias_periodo,
+        dias_periodo,
+        dias_periodo,
+        dias_periodo,
     ]
 
     if alertas and len(alertas) > 0:
@@ -1142,12 +1153,13 @@ def get_sugerencia_distribucion(
     alertas: Optional[List] = None,
     solo_sugeridos: Optional[bool] = True,
     lista_precio: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
 ):
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
-    start_date = datetime.now().date() - timedelta(days=dias_proyeccion - 1)
-    end_date = datetime.now().date()
+    start_date, end_date, dias_periodo = _resolve_period(dias_proyeccion, start_date, end_date)
 
     price_filter = ""
     price_params: List = []
@@ -1291,16 +1303,16 @@ def get_sugerencia_distribucion(
     if price_params:
         params.extend(price_params)
     params.extend([
-        dias_proyeccion,
-        dias_proyeccion,
-        dias_proyeccion,
-        dias_proyeccion,
-        dias_proyeccion,
-        dias_proyeccion,
-        dias_proyeccion,
-        dias_proyeccion,
-        dias_proyeccion,
-        dias_proyeccion,
+        dias_periodo,
+        dias_periodo,
+        dias_periodo,
+        dias_periodo,
+        dias_periodo,
+        dias_periodo,
+        dias_periodo,
+        dias_periodo,
+        dias_periodo,
+        dias_periodo,
     ])
 
     if alertas and len(alertas) > 0:
@@ -1365,12 +1377,13 @@ def get_kpi_alertas_criticas(
     codigos_prefix: Optional[List] = None,
     codigos_contains: Optional[List] = None,
     alertas: Optional[List] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
 ):
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
-    start_date = datetime.now().date() - timedelta(days=dias_proyeccion - 1)
-    end_date = datetime.now().date()
+    start_date, end_date, dias_periodo = _resolve_period(dias_proyeccion, start_date, end_date)
 
     alertas_criticas = alertas or ["Quiebre de stock", "Stock de Seguridad", "Pto de Pedido"]
 
@@ -1440,7 +1453,7 @@ def get_kpi_alertas_criticas(
         WHERE 1=1
     """
 
-    params: List = [start_date, end_date, dias_proyeccion, dias_proyeccion]
+    params: List = [start_date, end_date, dias_periodo, dias_periodo]
 
     if alertas_criticas:
         placeholders = ','.join(['%s'] * len(alertas_criticas))
@@ -1508,12 +1521,13 @@ def get_kpi_familias_reponer(
     codigos_prefix: Optional[List] = None,
     codigos_contains: Optional[List] = None,
     alertas: Optional[List] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
 ):
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
-    start_date = datetime.now().date() - timedelta(days=dias_proyeccion - 1)
-    end_date = datetime.now().date()
+    start_date, end_date, dias_periodo = _resolve_period(dias_proyeccion, start_date, end_date)
 
     alertas_criticas = alertas or ["Quiebre de stock", "Stock de Seguridad", "Pto de Pedido"]
 
@@ -1582,7 +1596,7 @@ def get_kpi_familias_reponer(
         WHERE 1=1
     """
 
-    params: List = [start_date, end_date, dias_proyeccion, dias_proyeccion]
+    params: List = [start_date, end_date, dias_periodo, dias_periodo]
 
     if alertas_criticas:
         placeholders = ','.join(['%s'] * len(alertas_criticas))
