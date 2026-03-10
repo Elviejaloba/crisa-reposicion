@@ -2,6 +2,7 @@
 .venv/
 __pycache__/
 logs/
+bridge_cache/
 backend_*.log
 backend_*.out.log
 backend_*.err.log

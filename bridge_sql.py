@@ -46,9 +46,54 @@ SYNC_INTERVAL = 3600  # 60 minutos entre sincronizaciones
 BATCH_SIZE = 500     # Lotes más chicos para evitar timeouts
 MAX_RETRIES = 3      # Reintentos por lote
 
-SYNC_HORARIO_INICIO = dt_time(6, 0)   # Desde las 6:00
-SYNC_HORARIO_FIN = dt_time(22, 0)     # Hasta las 22:00
-SOLO_FUERA_HORARIO = False  # True = solo sync fuera de horario operativo
+SYNC_HORARIO_INICIO = dt_time(8, 0)   # Desde las 8:00
+SYNC_HORARIO_FIN = dt_time(21, 0)     # Hasta las 21:00
+SYNC_DIAS_HABILITADOS = {0, 1, 2, 3, 4, 5}  # 0=Lun ... 5=Sab
+SYNC_SOLO_EN_HORARIO = True  # True = solo sync dentro del horario y días definidos
+
+CACHE_DIR = os.path.join(os.path.dirname(__file__), "bridge_cache")
+os.makedirs(CACHE_DIR, exist_ok=True)
+SALDO_SNAPSHOT = os.path.join(CACHE_DIR, "saldo_snapshot.pkl")
+COSTO_SNAPSHOT = os.path.join(CACHE_DIR, "costos_snapshot.pkl")
+
+def _build_signature(df, cols):
+    return df[cols].astype(str).agg("|".join, axis=1)
+
+def filtrar_incremental_local(df, key_cols, snapshot_path, label):
+    if df.empty:
+        return df, False
+    try:
+        sig_cols = list(df.columns)
+        curr = df.copy()
+        curr["__sig__"] = _build_signature(curr, sig_cols)
+
+        if not os.path.exists(snapshot_path):
+            return df, True
+
+        prev = pd.read_pickle(snapshot_path)
+        prev = prev[key_cols + ["__sig__"]]
+        merged = curr[key_cols + ["__sig__"]].merge(
+            prev, on=key_cols, how="left", suffixes=("", "_prev")
+        )
+        changed = merged["__sig__"] != merged["__sig__prev"]
+        df_filtrado = df.loc[changed].copy()
+        print(f"    Incremental local ({label}): {len(df_filtrado)} / {len(df)} registros")
+        return df_filtrado, True
+    except Exception as e:
+        print(f"    Aviso: no se pudo filtrar incremental local de {label}: {e}")
+        return df, False
+
+def guardar_snapshot(df, key_cols, snapshot_path, label):
+    if df.empty:
+        return
+    try:
+        sig_cols = list(df.columns)
+        snap = df.copy()
+        snap["__sig__"] = _build_signature(snap, sig_cols)
+        snap = snap[key_cols + ["__sig__"]]
+        snap.to_pickle(snapshot_path)
+    except Exception as e:
+        print(f"    Aviso: no se pudo guardar snapshot de {label}: {e}")
 
 def normalizar_unidad(cod):
     cod = str(cod or "").strip().upper()
@@ -140,11 +185,14 @@ def json_serial(obj):
 
 
 def esta_en_horario_sync():
-    if not SOLO_FUERA_HORARIO:
+    if not SYNC_SOLO_EN_HORARIO:
         return True
 
-    ahora = datetime.now().time()
+    now = datetime.now()
+    if now.weekday() not in SYNC_DIAS_HABILITADOS:
+        return False
 
+    ahora = now.time()
     if SYNC_HORARIO_INICIO > SYNC_HORARIO_FIN:
         return ahora >= SYNC_HORARIO_INICIO or ahora < SYNC_HORARIO_FIN
     else:
@@ -322,6 +370,13 @@ def get_data():
 
         df_saldo = pd.read_sql(query_saldo, conn)
         print(f"    Obtenidos: {len(df_saldo)} registros")
+        df_saldo_full = df_saldo
+        df_saldo, _ = filtrar_incremental_local(
+            df_saldo_full,
+            ["Cod. Articulo", "Cod. Deposito", "Sucursal"],
+            SALDO_SNAPSHOT,
+            "saldos"
+        )
 
         # ============================================================
         # VENTAS - INCREMENTAL: Solo desde última fecha o 7 días atrás
@@ -499,6 +554,13 @@ def get_data():
         df_costos = pd.read_sql(query_costos, conn)
         # Costos no tienen fecha de modificación confiable -> se envían completos (UPSERT)
         print(f"    Obtenidos: {len(df_costos)} registros")
+        df_costos_full = df_costos
+        df_costos, _ = filtrar_incremental_local(
+            df_costos_full,
+            ["Cod. Articulo"],
+            COSTO_SNAPSHOT,
+            "costos"
+        )
 
         # ============================================================
         # ARTÍCULOS - Nómina base
@@ -559,6 +621,8 @@ def get_data():
         # Saldos
         if len(df_saldo) > 0:
             ok, n = enviar_en_lotes(API_URL, "saldo", df_saldo, BATCH_SIZE)
+            if ok:
+                guardar_snapshot(df_saldo_full, ["Cod. Articulo", "Cod. Deposito", "Sucursal"], SALDO_SNAPSHOT, "saldos")
             print(f"    [OK] Saldos sincronizados: {n} registros")
 
         # Artículos (primero para poblar catálogos)
@@ -574,6 +638,8 @@ def get_data():
         # Costos
         if len(df_costos) > 0:
             ok, n = enviar_en_lotes(API_URL, "costos", df_costos, BATCH_SIZE)
+            if ok:
+                guardar_snapshot(df_costos_full, ["Cod. Articulo"], COSTO_SNAPSHOT, "costos")
             print(f"    [OK] Costos sincronizados: {n} registros")
         
         # Ventas (al final por volumen)
