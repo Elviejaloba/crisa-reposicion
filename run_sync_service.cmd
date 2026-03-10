@@ -13,8 +13,12 @@ if not exist .venv\Scripts\python.exe (
 )
 
 if not exist logs mkdir logs
-echo.>> logs\sync_service.log
-echo [%date% %time%] Iniciando servicio de sync...>> logs\sync_service.log
+for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyy-MM-dd_HH-mm-ss"') do set LOG_TS=%%i
+set "LOG_OUT=logs\sync_service_%LOG_TS%.log"
+set "LOG_ERR=logs\sync_service_%LOG_TS%.err"
 
-.venv\Scripts\python.exe bridge_sql.py >> logs\sync_service.log 2>> logs\sync_service.err
+echo.>> "%LOG_OUT%"
+echo [%date% %time%] Iniciando servicio de sync...>> "%LOG_OUT%"
+
+.venv\Scripts\python.exe bridge_sql.py >> "%LOG_OUT%" 2>> "%LOG_ERR%"
 endlocal

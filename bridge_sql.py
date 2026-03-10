@@ -45,6 +45,9 @@ API_URL = os.environ.get("SYNC_URL", "http://localhost:5000")
 SYNC_INTERVAL = 3600  # 60 minutos entre sincronizaciones
 BATCH_SIZE = 500     # Lotes más chicos para evitar timeouts
 MAX_RETRIES = 3      # Reintentos por lote
+DB_MAX_RETRIES = int(os.environ.get("DB_MAX_RETRIES", "4"))
+DB_RETRY_BACKOFF = [2, 5, 10, 20]
+DB_LOCK_TIMEOUT_MS = int(os.environ.get("DB_LOCK_TIMEOUT_MS", "30000"))
 
 SYNC_HORARIO_INICIO = dt_time(8, 0)   # Desde las 8:00
 SYNC_HORARIO_FIN = dt_time(21, 0)     # Hasta las 21:00
@@ -71,10 +74,16 @@ def filtrar_incremental_local(df, key_cols, snapshot_path, label):
             return df, True
 
         prev = pd.read_pickle(snapshot_path)
+        if "__sig__" not in prev.columns:
+            print(f"    Aviso: snapshot previo inválido para {label}, se envía completo.")
+            return df, True
         prev = prev[key_cols + ["__sig__"]]
         merged = curr[key_cols + ["__sig__"]].merge(
             prev, on=key_cols, how="left", suffixes=("", "_prev")
         )
+        if "__sig__prev" not in merged.columns:
+            print(f"    Aviso: snapshot previo incompleto para {label}, se envía completo.")
+            return df, True
         changed = merged["__sig__"] != merged["__sig__prev"]
         df_filtrado = df.loc[changed].copy()
         print(f"    Incremental local ({label}): {len(df_filtrado)} / {len(df)} registros")
@@ -182,6 +191,38 @@ def json_serial(obj):
     if hasattr(obj, 'isoformat'):
         return obj.isoformat()
     return str(obj)
+
+
+def _es_error_transitorio_db(err: Exception) -> bool:
+    msg = str(err).lower()
+    return ("1205" in msg or "deadlock" in msg or "1222" in msg or "lock request time out" in msg or "timeout" in msg)
+
+
+def _resumen_error_db(err: Exception) -> str:
+    msg = str(err)
+    if not msg:
+        return ""
+    lines = [l.strip() for l in msg.splitlines() if l.strip()]
+    return lines[-1] if lines else msg
+
+
+def read_sql_with_retry(query, conn, params=None, label="consulta"):
+    """Ejecuta SELECT con reintentos ante deadlock/timeout para no colgar SQL"""
+    last_err = None
+    for intento in range(DB_MAX_RETRIES):
+        try:
+            return pd.read_sql(query, conn, params=params)
+        except pyodbc.Error as e:
+            last_err = e
+            if _es_error_transitorio_db(e) and intento < DB_MAX_RETRIES - 1:
+                wait_time = DB_RETRY_BACKOFF[min(intento, len(DB_RETRY_BACKOFF) - 1)]
+                print(f"    [DB] {label}: deadlock/timeout, reintento {intento + 1}/{DB_MAX_RETRIES} en {wait_time}s...")
+                time.sleep(wait_time)
+                continue
+            resumen = _resumen_error_db(e)
+            print(f"    [DB] {label}: error no recuperable: {resumen}")
+            raise
+    raise last_err
 
 
 def esta_en_horario_sync():
@@ -324,7 +365,7 @@ def get_data():
         # Determinar si es primera sincronización
         es_primera_sync = total_saldos_existentes == 0
 
-        conn = pyodbc.connect(conn_str, timeout=30)
+        conn = pyodbc.connect(conn_str, timeout=30, autocommit=True)
         conn.timeout = 120
 
         # ============================================================
@@ -336,7 +377,8 @@ def get_data():
             SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
             SET DATEFORMAT DMY
             SET DATEFIRST 7
-            SET DEADLOCK_PRIORITY -8;
+            SET LOCK_TIMEOUT 30000;
+            SET DEADLOCK_PRIORITY LOW;
             SELECT
                 CTA_ARTICULO.COD_CTA_ARTICULO AS [Cod. Articulo] ,
                 CTA_ARTICULO.DESC_CTA_ARTICULO AS [Articulo] ,
@@ -368,7 +410,7 @@ def get_data():
                 CTA_ARTICULO.COD_CTA_ARTICULO, CTA_ARTICULO.DESC_CTA_ARTICULO, CTA_ARTICULO.SINONIMO, CTA_DEPOSITO.COD_CTA_DEPOSITO, SUCURSAL.NRO_SUCURSAL, SUCURSAL.DESC_SUCURSAL, CTA_DEPOSITO.DESC_CTA_DEPOSITO, (CASE CTA_ARTICULO.BASE when '' then CTA_ARTICULO.COD_ARTICULO ELSE CTA_ARTICULO.BASE end), (CASE CTA_ARTICULO.BASE when '' then CTA_ARTICULO.DESC_CTA_ARTICULO ELSE BASE.DESC_CTA_ARTICULO end), CTA_ARTICULO.ESCALA_1, STA33.DESC_VALOR, MEDIDA_STOCK.SIGLA_MEDIDA
         """
 
-        df_saldo = pd.read_sql(query_saldo, conn)
+        df_saldo = read_sql_with_retry(query_saldo, conn, label="saldos")
         print(f"    Obtenidos: {len(df_saldo)} registros")
         df_saldo_full = df_saldo
         df_saldo, _ = filtrar_incremental_local(
@@ -396,7 +438,8 @@ def get_data():
             SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
             SET DATEFORMAT DMY
             SET DATEFIRST 7
-            SET DEADLOCK_PRIORITY -8;
+            SET LOCK_TIMEOUT 30000;
+            SET DEADLOCK_PRIORITY LOW;
             SELECT
                 CTA03.FECHA_MOV AS [Fecha] ,
                 CTA02.NRO_SUCURS AS [Nro. Sucursal] ,
@@ -453,7 +496,7 @@ def get_data():
                 ISNULL(FAMILIA_ART.COD_AGR,''), FAMILIA_ART.NOM_AGR, MEDIDA_STOCK.SIGLA_MEDIDA
         """
 
-        df_ventas = pd.read_sql(query_ventas, conn)
+        df_ventas = read_sql_with_retry(query_ventas, conn, label="ventas")
         print(f"    Obtenidos: {len(df_ventas)} registros")
 
         if not df_ventas.empty:
@@ -479,7 +522,8 @@ def get_data():
             SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
             SET DATEFORMAT DMY
             SET DATEFIRST 7
-            SET DEADLOCK_PRIORITY -8;
+            SET LOCK_TIMEOUT 30000;
+            SET DEADLOCK_PRIORITY LOW;
             SELECT
                 STA11.COD_ARTICU AS [Cod. Articulo] ,
                 STA11.DESCRIPCIO AS [Descripcion] ,
@@ -506,7 +550,7 @@ def get_data():
                 STA11.COD_ARTICU , STA11.DESCRIPCIO , STA11.SINONIMO , FAMILIA_ART.COD_AGR , FAMILIA_ART.NOM_AGR , GVA17.PRECIO , GVA10.NRO_DE_LIS , GVA10.NOMBRE_LIS , GVA17.FECHA_MODI
         """
 
-        df_precios = pd.read_sql(query_precios, conn)
+        df_precios = read_sql_with_retry(query_precios, conn, label="precios")
         if ultima_sync_precios and not df_precios.empty:
             try:
                 df_precios["Fecha de ultima modificacion"] = pd.to_datetime(df_precios["Fecha de ultima modificacion"], errors="coerce")
@@ -525,7 +569,8 @@ def get_data():
             SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
             SET DATEFORMAT DMY 
             SET DATEFIRST 7 
-            SET DEADLOCK_PRIORITY -8;
+            SET LOCK_TIMEOUT 30000;
+            SET DEADLOCK_PRIORITY LOW;
             SELECT 
                 STA11.COD_ARTICU AS [Cod. Articulo],
                 STA11.DESCRIPCIO AS [Descripcion],
@@ -551,7 +596,7 @@ def get_data():
                 STA11.COD_ARTICU, STA11.DESCRIPCIO, STA11.SINONIMO, ISNULL(FAMILIA_ART.COD_AGR, ''), GVA16.COTIZ
         """
 
-        df_costos = pd.read_sql(query_costos, conn)
+        df_costos = read_sql_with_retry(query_costos, conn, label="costos")
         # Costos no tienen fecha de modificación confiable -> se envían completos (UPSERT)
         print(f"    Obtenidos: {len(df_costos)} registros")
         df_costos_full = df_costos
@@ -570,7 +615,8 @@ def get_data():
             SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
             SET DATEFORMAT DMY
             SET DATEFIRST 7
-            SET DEADLOCK_PRIORITY -8;
+            SET LOCK_TIMEOUT 30000;
+            SET DEADLOCK_PRIORITY LOW;
             SELECT
                 STA11.COD_ARTICU AS [Cod. Articulo],
                 STA11.DESCRIPCIO AS [Descripcion],
@@ -601,7 +647,7 @@ def get_data():
                 CASE STOCK WHEN 0 THEN 'No' ELSE 'Si' END,
                 CASE STA11.LLEVA_DOBLE_UNIDAD_MEDIDA WHEN 0 THEN 'No' ELSE 'Si' END
         """
-        df_articulos = pd.read_sql(query_articulos, conn)
+        df_articulos = read_sql_with_retry(query_articulos, conn, label="articulos")
         if ultima_sync_articulos and not df_articulos.empty:
             try:
                 df_articulos["Fecha de alta"] = pd.to_datetime(df_articulos["Fecha de alta"], errors="coerce")
@@ -683,7 +729,8 @@ def get_data():
         print(f"\n[{datetime.now()}] Sincronización completada exitosamente")
 
     except pyodbc.Error as db_error:
-        print(f"[{datetime.now()}] Error de base de datos: {db_error}")
+        resumen = _resumen_error_db(db_error)
+        print(f"[{datetime.now()}] Error de base de datos: {resumen}")
     except requests.exceptions.RequestException as req_error:
         print(f"[{datetime.now()}] Error de conexión al API: {req_error}")
     except Exception as e:

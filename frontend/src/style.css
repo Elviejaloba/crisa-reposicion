@@ -744,6 +744,7 @@ button {
 .table-wrap {
   margin-top: 10px;
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
   border-radius: 16px;
   border: 1px solid var(--border);
   position: relative;
@@ -1251,6 +1252,82 @@ button {
   }
   .ranking-value {
     text-align: left;
+  }
+}
+
+@media (max-width: 900px) {
+  .tabs {
+    flex-wrap: wrap;
+  }
+  .tabs button {
+    flex: 1 1 160px;
+  }
+  .sort-box {
+    width: 100%;
+  }
+  .sort-meta {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+  .sort-meta .download-btn {
+    width: 100%;
+    justify-content: center;
+  }
+  .matrix-wrap,
+  .table-wrap {
+    max-height: 60vh;
+  }
+  .matrix thead th {
+    font-size: 10px;
+    letter-spacing: 0.03em;
+  }
+}
+
+@media (max-width: 640px) {
+  .header {
+    gap: 16px;
+  }
+  .logo img {
+    height: 44px;
+  }
+  .title h1 {
+    font-size: 24px;
+  }
+  .sync {
+    width: 100%;
+    align-items: flex-start;
+  }
+  .filter-grid,
+  .filter-row {
+    gap: 12px;
+  }
+  .multi {
+    max-width: 100%;
+  }
+  .segmented {
+    flex-wrap: wrap;
+  }
+  .chip-actions {
+    flex-wrap: wrap;
+  }
+  .chart {
+    height: 260px;
+  }
+}
+
+@media (max-width: 480px) {
+  .tabs button {
+    padding: 8px 12px;
+  }
+  .panel {
+    padding: 16px;
+  }
+  .download-btn {
+    font-size: 10px;
+    padding: 5px 8px;
+  }
+  .kpi-value {
+    font-size: 18px;
   }
 }
 
