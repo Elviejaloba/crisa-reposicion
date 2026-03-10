@@ -44,6 +44,7 @@ const SUC_FRANQUICIAS = [
   'LA TIJERA TUNUYAN',
   'LA TIJERA MAIPU',
 ]
+const SUC_CRISA_TELAS = ['CRISA 2']
 
 type MatrixResponse = {
   columns: string[]
@@ -259,6 +260,7 @@ export default function App() {
   const [sortDesc, setSortDesc] = useState<boolean>(true)
   const [logoOk, setLogoOk] = useState<boolean>(true)
   const [rowLimit, setRowLimit] = useState<number>(200)
+  const [soloNuevos, setSoloNuevos] = useState<boolean>(false)
   const matrixRef = useRef<HTMLTableElement | null>(null)
 
   const nuestrasDisponibles = useMemo(
@@ -267,6 +269,10 @@ export default function App() {
   )
   const franquiciasDisponibles = useMemo(
     () => SUC_FRANQUICIAS.filter((s) => sucursales.includes(s)),
+    [sucursales]
+  )
+  const telasDisponibles = useMemo(
+    () => SUC_CRISA_TELAS.filter((s) => sucursales.includes(s)),
     [sucursales]
   )
   const isSameSelection = (a: string[], b: string[]) =>
@@ -287,6 +293,7 @@ export default function App() {
     setSelAlertas(ALERTAS.map((a) => a.value))
     setDias(30)
     setTemporada('')
+    setSoloNuevos(false)
   }
 
   const periodoVentas = useMemo(() => {
@@ -367,9 +374,11 @@ export default function App() {
     if (selFamilias.length) params.set('familias', selFamilias.join(','))
     if (codigo.trim()) params.set('codigos', codigo.trim())
     if (temporada) params.set('temporada', temporada)
+    if (soloNuevos) params.set('solo_nuevos', 'true')
+    if (soloNuevos) params.set('solo_nuevos', 'true')
     params.set('limit', String(rowLimit))
     return params.toString()
-  }, [dias, selAlertas, selSuc, selFamilias, codigo, rowLimit, temporada])
+  }, [dias, selAlertas, selSuc, selFamilias, codigo, rowLimit, temporada, soloNuevos])
 
   const [queryMatrix, setQueryMatrix] = useState(queryMatrixRaw)
 
@@ -432,6 +441,8 @@ export default function App() {
     if (selSuc.length) params.set('sucursales', selSuc.join(','))
     if (selFamilias.length) params.set('familias', selFamilias.join(','))
     if (codigo.trim()) params.set('codigos', codigo.trim())
+    if (temporada) params.set('temporada', temporada)
+    if (soloNuevos) params.set('solo_nuevos', 'true')
     setSugerenciaLoading(true)
     setSugerenciaError('')
     const controller = new AbortController()
@@ -462,7 +473,7 @@ export default function App() {
       window.clearTimeout(timeoutId)
       controller.abort()
     }
-  }, [tab, dias, sugRowLimit, sugOnlyPositive, selAlertas, selSuc, selFamilias, codigo, temporada])
+  }, [tab, dias, sugRowLimit, sugOnlyPositive, selAlertas, selSuc, selFamilias, codigo, temporada, soloNuevos])
 
   useEffect(() => {
     if (!sugerencia.rows.length) return
@@ -486,7 +497,7 @@ export default function App() {
 
   const sugerenciaColumns = useMemo(() => {
     if (!sugerencia.rows.length) return []
-    const keys = Object.keys(sugerencia.rows[0])
+    const keys = Object.keys(sugerencia.rows[0]).filter((k) => k !== 'is_nuevo')
     const preferred = [
       'sucursal',
       'cod_base',
@@ -662,7 +673,7 @@ export default function App() {
       window.clearTimeout(timeoutId)
       controller.abort()
     }
-  }, [tab, dias, selSuc, selFamilias, codigo, temporada])
+  }, [tab, dias, selSuc, selFamilias, codigo, temporada, soloNuevos])
 
   useEffect(() => {
     if (tab !== 'kpi') return
@@ -672,6 +683,7 @@ export default function App() {
     if (selFamilias.length) params.set('familias', selFamilias.join(','))
     if (codigo.trim()) params.set('codigos', codigo.trim())
     if (temporada) params.set('temporada', temporada)
+    if (soloNuevos) params.set('solo_nuevos', 'true')
     setKpiFamiliasLoading(true)
     setKpiFamiliasError('')
     const controller = new AbortController()
@@ -702,7 +714,12 @@ export default function App() {
       window.clearTimeout(timeoutId)
       controller.abort()
     }
-  }, [tab, dias, selSuc, selFamilias, codigo, temporada])
+  }, [tab, dias, selSuc, selFamilias, codigo, temporada, soloNuevos])
+
+  const matrixColumns = useMemo(
+    () => matrix.columns.filter((c) => c !== 'is_nuevo'),
+    [matrix.columns]
+  )
 
   const displayRows = useMemo(() => {
     const rows = [...(matrix.rows || [])]
@@ -717,8 +734,8 @@ export default function App() {
     })
 
     const total: Record<string, any> = {}
-    if (filtered.length && matrix.columns.length) {
-      matrix.columns.forEach((c) => {
+    if (filtered.length && matrixColumns.length) {
+      matrixColumns.forEach((c) => {
         if (c === BASE_KEY) total[c] = 'Total'
         else if (c === ART_KEY) total[c] = ''
         else {
@@ -728,18 +745,18 @@ export default function App() {
       })
     }
 
-    if (!hasTotal && filtered.length && matrix.columns.length) {
+    if (!hasTotal && filtered.length && matrixColumns.length) {
       return [...filtered, total]
     }
     if (hasTotal && filtered.length) {
       return [...filtered, total]
     }
     return filtered
-  }, [matrix.rows, matrix.columns])
+  }, [matrix.rows, matrixColumns])
 
   const displayColumns = useMemo(() => {
-    if (!matrix.columns.length) return []
-    const cols = matrix.columns
+    if (!matrixColumns.length) return []
+    const cols = matrixColumns
     const preferred = [
       BASE_KEY,
       ART_KEY,
@@ -916,7 +933,7 @@ export default function App() {
   const downloadSugerenciaExcel = async () => {
     if (!sugerenciaSortedRows.length) return
     const { utils, writeFile } = await import('xlsx')
-    const header = Object.keys(sugerenciaSortedRows[0])
+    const header = sugerenciaColumns.length ? sugerenciaColumns : Object.keys(sugerenciaSortedRows[0])
     const rows = sugerenciaSortedRows.map((r) => {
       const row: Record<string, any> = {}
       header.forEach((k) => {
@@ -1001,7 +1018,8 @@ export default function App() {
             <span className="mini-pill">Familias: {summarizeList(selFamilias, 'Todas')}</span>
             <span className="mini-pill">Código: {codigo ? codigo : 'Todos'}</span>
             <span className="mini-pill">Alertas: {selAlertas.length === 0 ? 'Ninguna' : selAlertas.length === ALERTAS.length ? 'Todas' : summarizeList(selAlertas, 'Todas')}</span>
-            <span className="mini-pill">Temporada: {temporada ? (temporada === 'invierno' ? 'Invierno' : 'Verano') : 'Todas'}</span>
+            <span className="mini-pill">Productos: {temporada ? (temporada === 'invierno' ? 'Invierno' : 'Verano') : 'Todas'}</span>
+            <span className="mini-pill">Artículos nuevos: {soloNuevos ? 'Sí' : 'No'}</span>
             <span className="mini-pill">Días: {dias}</span>
             <button type="button" className="mini-pill action" onClick={clearFilters}>Limpiar filtros</button>
           </div>
@@ -1018,21 +1036,37 @@ export default function App() {
               ))}
             </div>
             <div className="season-row">
-              <div className="season-label">Temporada de ventas</div>
+              <div className="season-label">Productos por temporada (ventas)</div>
               <div className="chip-row">
                 <button
                   type="button"
                   className={`chip info ${temporada === 'invierno' ? 'on' : ''}`}
                   onClick={() => setTemporada(temporada === 'invierno' ? '' : 'invierno')}
                 >
-                  Invierno
+                  Productos de Invierno
                 </button>
                 <button
                   type="button"
                   className={`chip warning ${temporada === 'verano' ? 'on' : ''}`}
                   onClick={() => setTemporada(temporada === 'verano' ? '' : 'verano')}
                 >
-                  Verano
+                  Productos de Verano
+                </button>
+              </div>
+              {temporada ? (
+                <div className="season-range">Periodo aplicado: {periodoVentas}</div>
+              ) : null}
+            </div>
+            <div className="season-row">
+              <div className="season-label">Artículos nuevos</div>
+              <div className="chip-row">
+                <button
+                  type="button"
+                  className={`chip new ${soloNuevos ? 'on' : ''}`}
+                  onClick={() => setSoloNuevos((v) => !v)}
+                  title="Fecha de alta dentro de los últimos 6 meses"
+                >
+                  Artículos nuevos
                 </button>
               </div>
             </div>
@@ -1089,7 +1123,10 @@ export default function App() {
           <div className="panel-head">
             <div className="panel-title">
               <h2>Necesidad de distribución</h2>
-              <p>Resumen por artículo con necesidad de distribución según ventas y stock CDD.</p>
+              <p>
+                Resumen por artículo con necesidad de distribución según ventas y stock CDD.
+                Verde: necesidad positiva (faltante a reponer). Rojo: excedente o sobrestock (sobran unidades).
+              </p>
               <div className="quick-filters">
                 <button
                   type="button"
@@ -1104,6 +1141,13 @@ export default function App() {
                   onClick={() => setSelSuc(franquiciasDisponibles)}
                 >
                   Franquicias
+                </button>
+                <button
+                  type="button"
+                  className={`quick-chip ${isSameSelection(selSuc, telasDisponibles) ? 'on' : ''}`}
+                  onClick={() => setSelSuc(telasDisponibles)}
+                >
+                  Crisa Telas
                 </button>
               </div>
             </div>
@@ -1177,6 +1221,7 @@ export default function App() {
                   {visibleRows.map((row, i) => {
                     const rowKey = `${row[BASE_KEY] ?? ''}-${row[ART_KEY] ?? ''}-${i}`
                     const isTotalRow = String(row[BASE_KEY] || '').toLowerCase() === 'total'
+                    const isNuevo = !isTotalRow && Number((row as any).is_nuevo ?? 0) > 0
                     return (
                       <tr key={rowKey} className={isTotalRow ? 'total-row' : ''}>
                         {displayColumns.map((c, idx) => {
@@ -1195,7 +1240,14 @@ export default function App() {
                               : ''
                           return (
                             <td key={c} className={`${cls} ${tone} ${sticky}`}>
-                              {isCodeCol ? String(v ?? '') : (Number.isFinite(n) ? formatNumber(n) : String(v))}
+                              {isCodeCol ? (
+                                <span className="code-cell">
+                                  <span>{String(v ?? '')}</span>
+                                  {c === BASE_KEY && isNuevo ? (
+                                    <span className="new-tag" title="Artículo nuevo (últimos 6 meses)">Nuevo</span>
+                                  ) : null}
+                                </span>
+                              ) : (Number.isFinite(n) ? formatNumber(n) : String(v))}
                             </td>
                           )
                         })}
@@ -1214,8 +1266,31 @@ export default function App() {
           <div className="panel-head">
             <div>
               <h2>Sugerencia de Distribución</h2>
-              <p>Listado detallado por sucursal y artículo con sugerencias de envío.</p>
+              <p>Analisis de distribucion.</p>
               <div className="period-pill">Periodo de ventas: {periodoVentas}</div>
+              <div className="quick-filters">
+                <button
+                  type="button"
+                  className={`quick-chip ${isSameSelection(selSuc, nuestrasDisponibles) ? 'on' : ''}`}
+                  onClick={() => setSelSuc(nuestrasDisponibles)}
+                >
+                  Sucursales Nuestras
+                </button>
+                <button
+                  type="button"
+                  className={`quick-chip ${isSameSelection(selSuc, franquiciasDisponibles) ? 'on' : ''}`}
+                  onClick={() => setSelSuc(franquiciasDisponibles)}
+                >
+                  Franquicias
+                </button>
+                <button
+                  type="button"
+                  className={`quick-chip ${isSameSelection(selSuc, telasDisponibles) ? 'on' : ''}`}
+                  onClick={() => setSelSuc(telasDisponibles)}
+                >
+                  Crisa Telas
+                </button>
+              </div>
               {sugerenciaSortedRows.length > 0 ? (
                 <div className="mini-stats">
                   {Object.entries(sugerenciaResumen).map(([k, v]) => (
@@ -1302,36 +1377,47 @@ export default function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {sugerenciaSortedRows.map((r, idx) => (
-                    <tr key={idx}>
-                      {sugerenciaColumns.map((c) => {
-                        const v = r[c]
-                        const n = parseLocaleNumber(v)
-                        const isNumeric =
-                          /(stock|venta|meses|necesidad|sugerencia|promedio|importe|cantidad|cobertura|precio|costo|valor|margen)/i.test(c)
-                        const isMoney =
-                          /(costo_unitario|valor_reponer_costo|valor_reponer_venta|margen_estimado|precio_unitario)/i.test(c)
-                        const label = sugerenciaLabels[c] || c.replace(/_/g, ' ')
-                        if (c === 'prioridad') {
-                          const tag = String(v ?? '').toLowerCase().replace(/\s+/g, '-')
+                  {sugerenciaSortedRows.map((r, idx) => {
+                    const isNuevo = Number(r.is_nuevo ?? 0) > 0
+                    return (
+                      <tr key={idx}>
+                        {sugerenciaColumns.map((c) => {
+                          const v = r[c]
+                          const n = parseLocaleNumber(v)
+                          const isNumeric =
+                            /(stock|venta|meses|necesidad|sugerencia|promedio|importe|cantidad|cobertura|precio|costo|valor|margen)/i.test(c)
+                          const isMoney =
+                            /(costo_unitario|valor_reponer_costo|valor_reponer_venta|margen_estimado|precio_unitario)/i.test(c)
+                          const label = sugerenciaLabels[c] || c.replace(/_/g, ' ')
+                          if (c === 'prioridad') {
+                            const tag = String(v ?? '').toLowerCase().replace(/\s+/g, '-')
+                            return (
+                              <td key={c} className="text" title={label}>
+                                <span className={`badge ${tag}`}>{String(v ?? '')}</span>
+                              </td>
+                            )
+                          }
+                          const displayValue =
+                            isNumeric && Number.isFinite(n)
+                              ? (isMoney ? formatMoney(n) : formatNumber(n))
+                              : String(v ?? '')
+                          const showNuevo = isNuevo && c === 'cod_articulo'
                           return (
-                            <td key={c} className="text" title={label}>
-                              <span className={`badge ${tag}`}>{String(v ?? '')}</span>
+                            <td key={c} className={isNumeric ? 'num' : 'text'} title={`${label}: ${displayValue}`}>
+                              {showNuevo ? (
+                                <span className="code-cell">
+                                  <span>{displayValue}</span>
+                                  <span className="new-tag" title="Artículo nuevo (últimos 6 meses)">Nuevo</span>
+                                </span>
+                              ) : (
+                                displayValue
+                              )}
                             </td>
                           )
-                        }
-                        const displayValue =
-                          isNumeric && Number.isFinite(n)
-                            ? (isMoney ? formatMoney(n) : formatNumber(n))
-                            : String(v ?? '')
-                        return (
-                          <td key={c} className={isNumeric ? 'num' : 'text'} title={`${label}: ${displayValue}`}>
-                            {displayValue}
-                          </td>
-                        )
-                      })}
-                    </tr>
-                  ))}
+                        })}
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             )}

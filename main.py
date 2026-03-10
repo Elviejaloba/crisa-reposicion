@@ -529,6 +529,7 @@ async def get_matriz_distribucion(
     familias: Optional[str] = None,
     codigos: Optional[str] = None,
     temporada: Optional[str] = None,
+    solo_nuevos: Optional[bool] = False,
     limit: int = 200,
 ):
     """
@@ -553,6 +554,7 @@ async def get_matriz_distribucion(
         prefijos_familia=fam_list if fam_list else None,
         codigos_prefix=cod_prefix if cod_prefix else None,
         codigos_contains=cod_contains if cod_contains else None,
+        solo_nuevos=bool(solo_nuevos),
         start_date=start_date,
         end_date=end_date,
     )
@@ -562,6 +564,8 @@ async def get_matriz_distribucion(
     df = pd.DataFrame(data)
     if "cod_base" in df.columns and "cod_articulo" in df.columns:
         df["cod_base"] = df["cod_base"].fillna(df["cod_articulo"])
+    if "is_nuevo" not in df.columns:
+        df["is_nuevo"] = 0
 
     if df.empty:
         return {"columns": [], "rows": [], "source_rows": 0}
@@ -578,6 +582,10 @@ async def get_matriz_distribucion(
     cdd = cdd.rename(columns={"stock_cdd": "Stock CDD"})
     piv = piv.merge(cdd, on=["cod_base", "cod_articulo"], how="left")
     piv["Stock CDD"] = pd.to_numeric(piv["Stock CDD"], errors="coerce").fillna(0.0)
+
+    nuevos = df.groupby(["cod_base", "cod_articulo"], as_index=False)["is_nuevo"].max()
+    piv = piv.merge(nuevos, on=["cod_base", "cod_articulo"], how="left")
+    piv["is_nuevo"] = piv["is_nuevo"].fillna(0).astype(int)
 
     orden = [
         "CRISA 2", "CRISA CENTRAL", "LA TIJERA LUJAN", "LA TIJERA MAIPU",
@@ -620,7 +628,7 @@ async def get_matriz_distribucion(
     if safe_limit:
         piv = piv.head(safe_limit)
 
-    columns = list(piv.columns)
+    columns = [c for c in piv.columns if c != "is_nuevo"]
     rows = piv.to_dict(orient="records")
     return {"columns": columns, "rows": rows, "source_rows": len(df)}
 
@@ -634,6 +642,7 @@ async def get_sugerencia_distribucion(
     familias: Optional[str] = None,
     codigos: Optional[str] = None,
     temporada: Optional[str] = None,
+    solo_nuevos: Optional[bool] = False,
     solo_sugeridos: Optional[bool] = True,
     lista_precio: Optional[str] = None,
 ):
@@ -665,6 +674,7 @@ async def get_sugerencia_distribucion(
         alertas=alertas_list if alertas_list else None,
         solo_sugeridos=solo_sugeridos,
         lista_precio=lista_precio,
+        solo_nuevos=bool(solo_nuevos),
         start_date=start_date,
         end_date=end_date,
     )
@@ -889,6 +899,7 @@ async def get_kpi_alertas_criticas(
     familias: Optional[str] = None,
     codigos: Optional[str] = None,
     temporada: Optional[str] = None,
+    solo_nuevos: Optional[bool] = False,
 ):
     suc_list = _parse_csv_param(sucursales)
     fam_list = [f.upper() for f in _parse_csv_param(familias)]
@@ -905,6 +916,7 @@ async def get_kpi_alertas_criticas(
         prefijos_familia=fam_list if fam_list else None,
         codigos_prefix=cod_prefix if cod_prefix else None,
         codigos_contains=cod_contains if cod_contains else None,
+        solo_nuevos=bool(solo_nuevos),
         start_date=start_date,
         end_date=end_date,
     )
@@ -923,6 +935,7 @@ async def get_kpi_familias_reponer(
     familias: Optional[str] = None,
     codigos: Optional[str] = None,
     temporada: Optional[str] = None,
+    solo_nuevos: Optional[bool] = False,
 ):
     suc_list = _parse_csv_param(sucursales)
     fam_list = [f.upper() for f in _parse_csv_param(familias)]
@@ -939,6 +952,7 @@ async def get_kpi_familias_reponer(
         prefijos_familia=fam_list if fam_list else None,
         codigos_prefix=cod_prefix if cod_prefix else None,
         codigos_contains=cod_contains if cod_contains else None,
+        solo_nuevos=bool(solo_nuevos),
         start_date=start_date,
         end_date=end_date,
     )

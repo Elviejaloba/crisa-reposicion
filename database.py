@@ -9,6 +9,7 @@ except Exception:
     pass
 from psycopg2.extras import RealDictCursor, execute_values
 from datetime import datetime, timedelta, date
+import calendar
 from typing import Optional, List
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
@@ -22,6 +23,18 @@ def _resolve_period(dias_proyeccion: int, start_date: Optional[date] = None, end
         start = end - timedelta(days=dias_proyeccion - 1)
     dias = max((end - start).days + 1, 1)
     return start, end, dias
+
+def _months_ago(base_date: date, months: int) -> date:
+    if months <= 0:
+        return base_date
+    y = base_date.year
+    m = base_date.month - months
+    while m <= 0:
+        m += 12
+        y -= 1
+    last_day = calendar.monthrange(y, m)[1]
+    d = min(base_date.day, last_day)
+    return date(y, m, d)
 
 SUCURSALES_UNIFICAR = {
     "LA TIJERA MAYORISTA MENDOZA": "LA TIJERA MENDOZA",
@@ -989,6 +1002,7 @@ def get_matriz_distribucion(
     prefijos_familia: Optional[List] = None,
     codigos_prefix: Optional[List] = None,
     codigos_contains: Optional[List] = None,
+    solo_nuevos: bool = False,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
 ):
@@ -996,6 +1010,7 @@ def get_matriz_distribucion(
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
     start_date, end_date, dias_periodo = _resolve_period(dias_proyeccion, start_date, end_date)
+    nuevo_cutoff = _months_ago(datetime.now().date(), 6)
 
     query = """
         WITH ventas_p AS (
@@ -1029,8 +1044,18 @@ def get_matriz_distribucion(
               AND (
                 RIGHT(COALESCE(cod_deposito, ''), 2) IN ('01','30')
                 OR RIGHT(COALESCE(deposito, ''), 2) IN ('01','30')
-              )
+            )
             GROUP BY 1,2
+        ),
+        art_norm AS (
+            SELECT
+                cod_articulo,
+                cod_base,
+                descripcion,
+                sinonimo,
+                fecha_alta,
+                REPLACE(UPPER(cod_articulo), ' ', '') AS cod_norm
+            FROM articulos
         ),
         calc AS (
             SELECT
@@ -1060,11 +1085,15 @@ def get_matriz_distribucion(
                 COALESCE(cdd.stock_cdd, 0) AS stock_cdd,
                 COALESCE(s.familia, '') AS familia,
                 COALESCE(s.descripcion, a.descripcion, '') AS descripcion,
-                COALESCE(s.sinonimo, a.sinonimo, '') AS sinonimo
+                COALESCE(s.sinonimo, a.sinonimo, '') AS sinonimo,
+                CASE
+                    WHEN a.fecha_alta IS NOT NULL AND a.fecha_alta >= %s THEN 1
+                    ELSE 0
+                END AS is_nuevo
             FROM base b
             LEFT JOIN stock_s s ON s.cod_articulo = b.cod_articulo AND s.sucursal = b.sucursal
             LEFT JOIN ventas_p v ON v.cod_articulo = b.cod_articulo AND v.sucursal = b.sucursal
-            LEFT JOIN articulos a ON a.cod_articulo = b.cod_articulo
+            LEFT JOIN art_norm a ON a.cod_norm = REPLACE(UPPER(b.cod_articulo), ' ', '')
             LEFT JOIN cdd ON cdd.cod_articulo = b.cod_articulo
         )
         SELECT * FROM calc WHERE 1=1
@@ -1083,6 +1112,7 @@ def get_matriz_distribucion(
         dias_periodo,
         dias_periodo,
         dias_periodo,
+        nuevo_cutoff,
     ]
 
     if alertas and len(alertas) > 0:
@@ -1126,6 +1156,9 @@ def get_matriz_distribucion(
     if cod_filters:
         query += " AND (" + " OR ".join(cod_filters) + ")"
 
+    if solo_nuevos:
+        query += " AND is_nuevo = 1"
+
     query += " ORDER BY cod_base, cod_articulo, sucursal"
 
     cur.execute(query, params)
@@ -1153,6 +1186,7 @@ def get_sugerencia_distribucion(
     alertas: Optional[List] = None,
     solo_sugeridos: Optional[bool] = True,
     lista_precio: Optional[str] = None,
+    solo_nuevos: bool = False,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
 ):
@@ -1160,6 +1194,7 @@ def get_sugerencia_distribucion(
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
     start_date, end_date, dias_periodo = _resolve_period(dias_proyeccion, start_date, end_date)
+    nuevo_cutoff = _months_ago(datetime.now().date(), 6)
 
     price_filter = ""
     price_params: List = []
@@ -1227,6 +1262,16 @@ def get_sugerencia_distribucion(
             SELECT cod_articulo, costo_reposicion
             FROM costos
         ),
+        art_norm AS (
+            SELECT
+                cod_articulo,
+                cod_base,
+                descripcion,
+                sinonimo,
+                fecha_alta,
+                REPLACE(UPPER(cod_articulo), ' ', '') AS cod_norm
+            FROM articulos
+        ),
         calc AS (
             SELECT
                 COALESCE(a.cod_base, b.cod_articulo) AS cod_base,
@@ -1257,11 +1302,15 @@ def get_sugerencia_distribucion(
                 COALESCE(c.costo_reposicion, 0) AS costo_unitario,
                 COALESCE(s.familia, '') AS familia,
                 COALESCE(s.descripcion, a.descripcion, '') AS descripcion,
-                COALESCE(s.sinonimo, a.sinonimo, '') AS sinonimo
+                COALESCE(s.sinonimo, a.sinonimo, '') AS sinonimo,
+                CASE
+                    WHEN a.fecha_alta IS NOT NULL AND a.fecha_alta >= %s THEN 1
+                    ELSE 0
+                END AS is_nuevo
             FROM base b
             LEFT JOIN stock_s s ON s.cod_articulo = b.cod_articulo AND s.sucursal = b.sucursal
             LEFT JOIN ventas_p v ON v.cod_articulo = b.cod_articulo AND v.sucursal = b.sucursal
-            LEFT JOIN articulos a ON a.cod_articulo = b.cod_articulo
+            LEFT JOIN art_norm a ON a.cod_norm = REPLACE(UPPER(b.cod_articulo), ' ', '')
             LEFT JOIN cdd ON cdd.cod_articulo = b.cod_articulo
             LEFT JOIN precio_u p ON p.cod_articulo = b.cod_articulo
             LEFT JOIN costo_u c ON c.cod_articulo = b.cod_articulo
@@ -1270,6 +1319,7 @@ def get_sugerencia_distribucion(
             sucursal,
             cod_base,
             cod_articulo,
+            is_nuevo,
             stock_sucursal,
             stock_cdd,
             ventas_periodo,
@@ -1313,6 +1363,7 @@ def get_sugerencia_distribucion(
         dias_periodo,
         dias_periodo,
         dias_periodo,
+        nuevo_cutoff,
     ])
 
     if alertas and len(alertas) > 0:
@@ -1359,6 +1410,9 @@ def get_sugerencia_distribucion(
     if solo_sugeridos:
         query += " AND necesidad > 0"
 
+    if solo_nuevos:
+        query += " AND is_nuevo = 1"
+
     query += " ORDER BY sugerencia_distribuir DESC, necesidad DESC, sucursal, cod_articulo"
     if limit and limit > 0:
         query += " LIMIT %s"
@@ -1377,6 +1431,7 @@ def get_kpi_alertas_criticas(
     codigos_prefix: Optional[List] = None,
     codigos_contains: Optional[List] = None,
     alertas: Optional[List] = None,
+    solo_nuevos: bool = False,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
 ):
@@ -1384,6 +1439,7 @@ def get_kpi_alertas_criticas(
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
     start_date, end_date, dias_periodo = _resolve_period(dias_proyeccion, start_date, end_date)
+    nuevo_cutoff = _months_ago(datetime.now().date(), 6)
 
     alertas_criticas = alertas or ["Quiebre de stock", "Stock de Seguridad", "Pto de Pedido"]
 
@@ -1409,6 +1465,16 @@ def get_kpi_alertas_criticas(
             UNION
             SELECT cod_articulo, sucursal FROM ventas_p
         ),
+        art_norm AS (
+            SELECT
+                cod_articulo,
+                cod_base,
+                descripcion,
+                sinonimo,
+                fecha_alta,
+                REPLACE(UPPER(cod_articulo), ' ', '') AS cod_norm
+            FROM articulos
+        ),
         calc_base AS (
             SELECT
                 COALESCE(a.cod_base, b.cod_articulo) AS cod_base,
@@ -1425,7 +1491,11 @@ def get_kpi_alertas_criticas(
                 COALESCE(c.costo_reposicion, 0) AS costo_unitario,
                 COALESCE(s.familia, '') AS familia,
                 COALESCE(s.descripcion, a.descripcion, '') AS descripcion,
-                COALESCE(s.sinonimo, a.sinonimo, '') AS sinonimo
+                COALESCE(s.sinonimo, a.sinonimo, '') AS sinonimo,
+                CASE
+                    WHEN a.fecha_alta IS NOT NULL AND a.fecha_alta >= %s THEN 1
+                    ELSE 0
+                END AS is_nuevo
             FROM base b
             LEFT JOIN stock_s s ON s.cod_articulo = b.cod_articulo AND s.sucursal = b.sucursal
             LEFT JOIN ventas_p v ON v.cod_articulo = b.cod_articulo AND v.sucursal = b.sucursal
@@ -1453,7 +1523,7 @@ def get_kpi_alertas_criticas(
         WHERE 1=1
     """
 
-    params: List = [start_date, end_date, dias_periodo, dias_periodo]
+    params: List = [start_date, end_date, dias_periodo, dias_periodo, nuevo_cutoff]
 
     if alertas_criticas:
         placeholders = ','.join(['%s'] * len(alertas_criticas))
@@ -1490,6 +1560,9 @@ def get_kpi_alertas_criticas(
     if cod_filters:
         query += " AND (" + " OR ".join(cod_filters) + ")"
 
+    if solo_nuevos:
+        query += " AND is_nuevo = 1"
+
     query += " AND necesidad > 0 GROUP BY sucursal ORDER BY monto_reponer_costo DESC"
 
     cur.execute(query, params)
@@ -1521,6 +1594,7 @@ def get_kpi_familias_reponer(
     codigos_prefix: Optional[List] = None,
     codigos_contains: Optional[List] = None,
     alertas: Optional[List] = None,
+    solo_nuevos: bool = False,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
 ):
@@ -1528,6 +1602,7 @@ def get_kpi_familias_reponer(
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
     start_date, end_date, dias_periodo = _resolve_period(dias_proyeccion, start_date, end_date)
+    nuevo_cutoff = _months_ago(datetime.now().date(), 6)
 
     alertas_criticas = alertas or ["Quiebre de stock", "Stock de Seguridad", "Pto de Pedido"]
 
@@ -1553,6 +1628,16 @@ def get_kpi_familias_reponer(
             UNION
             SELECT cod_articulo, sucursal FROM ventas_p
         ),
+        art_norm AS (
+            SELECT
+                cod_articulo,
+                cod_base,
+                descripcion,
+                sinonimo,
+                fecha_alta,
+                REPLACE(UPPER(cod_articulo), ' ', '') AS cod_norm
+            FROM articulos
+        ),
         calc_base AS (
             SELECT
                 b.sucursal,
@@ -1569,11 +1654,15 @@ def get_kpi_familias_reponer(
                 (COALESCE(v.ventas_periodo, 0) - COALESCE(s.stock_sucursal, 0)) AS necesidad,
                 COALESCE(c.costo_reposicion, 0) AS costo_unitario,
                 COALESCE(s.descripcion, a.descripcion, '') AS descripcion,
-                COALESCE(s.sinonimo, a.sinonimo, '') AS sinonimo
+                COALESCE(s.sinonimo, a.sinonimo, '') AS sinonimo,
+                CASE
+                    WHEN a.fecha_alta IS NOT NULL AND a.fecha_alta >= %s THEN 1
+                    ELSE 0
+                END AS is_nuevo
             FROM base b
             LEFT JOIN stock_s s ON s.cod_articulo = b.cod_articulo AND s.sucursal = b.sucursal
             LEFT JOIN ventas_p v ON v.cod_articulo = b.cod_articulo AND v.sucursal = b.sucursal
-            LEFT JOIN articulos a ON a.cod_articulo = b.cod_articulo
+            LEFT JOIN art_norm a ON a.cod_norm = REPLACE(UPPER(b.cod_articulo), ' ', '')
             LEFT JOIN costos c ON c.cod_articulo = b.cod_articulo
         ),
         calc AS (
@@ -1596,7 +1685,7 @@ def get_kpi_familias_reponer(
         WHERE 1=1
     """
 
-    params: List = [start_date, end_date, dias_periodo, dias_periodo]
+    params: List = [start_date, end_date, dias_periodo, dias_periodo, nuevo_cutoff]
 
     if alertas_criticas:
         placeholders = ','.join(['%s'] * len(alertas_criticas))
@@ -1632,6 +1721,9 @@ def get_kpi_familias_reponer(
 
     if cod_filters:
         query += " AND (" + " OR ".join(cod_filters) + ")"
+
+    if solo_nuevos:
+        query += " AND is_nuevo = 1"
 
     query += " AND necesidad > 0 GROUP BY COALESCE(NULLIF(desc_familia, ''), NULLIF(familia, ''), 'SIN FAMILIA') ORDER BY monto_reponer_costo DESC"
 

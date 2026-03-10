@@ -386,7 +386,7 @@ button {
 }
 
 .season-row {
-  margin-top: 8px;
+  margin-top: 14px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -395,6 +395,13 @@ button {
 .season-label {
   font-size: 11px;
   color: var(--muted);
+}
+.season-range {
+  font-size: 11px;
+  color: #475569;
+  margin-top: 2px;
+  opacity: 0.85;
+  animation: season-hint 1.8s ease-in-out infinite;
 }
 
 .segmented button {
@@ -567,11 +574,85 @@ button {
 }
 
 .chip.danger.on { color: #dc2626; background: #fee2e2; border-color: #fecaca; }
-.chip.warning.on { color: #b45309; background: #fef3c7; border-color: #fde68a; }
-.chip.info.on { color: #1d4ed8; background: #dbeafe; border-color: #bfdbfe; }
+.chip.warning.on {
+  color: #b45309;
+  background: #fef3c7;
+  border-color: #fde68a;
+  position: relative;
+  overflow: hidden;
+  background-image:
+    radial-gradient(circle at 80% 25%, rgba(255, 255, 255, 0.45) 0 9px, transparent 10px),
+    linear-gradient(120deg, transparent 0%, rgba(255, 255, 255, 0.32) 50%, transparent 100%);
+  background-size: auto, 220% 100%;
+  background-position: 0 0, -220% 0;
+  animation: heat-sheen 1.6s ease-in-out infinite;
+}
+.chip.info.on {
+  color: #1d4ed8;
+  background: #dbeafe;
+  border-color: #bfdbfe;
+  position: relative;
+  overflow: hidden;
+  background-image:
+    radial-gradient(circle, rgba(255, 255, 255, 0.75) 0 2px, transparent 3px),
+    radial-gradient(circle, rgba(255, 255, 255, 0.65) 0 2px, transparent 3px),
+    radial-gradient(circle, rgba(255, 255, 255, 0.55) 0 2px, transparent 3px);
+  background-size: 14px 14px, 18px 18px, 12px 12px;
+  background-position: 0 -10px, 6px -20px, -6px -16px;
+  animation: snow-fall 2.6s linear infinite;
+}
 .chip.purple.on { color: #7c3aed; background: #ede9fe; border-color: #ddd6fe; }
 .chip.muted.on { color: #475569; background: #e2e8f0; border-color: #cbd5f5; }
 .chip.success.on { color: #15803d; background: #dcfce7; border-color: #bbf7d0; }
+.chip.new.on { color: #0f766e; background: #ccfbf1; border-color: #99f6e4; }
+
+.code-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.new-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #0e7490;
+  background: #ecfeff;
+  border: 1px solid #a5f3fc;
+}
+
+@keyframes snow-fall {
+  0% {
+    background-position: 0 -12px, 6px -20px, -6px -16px;
+    opacity: 0.2;
+  }
+  25% { opacity: 0.7; }
+  100% {
+    background-position: 0 16px, 6px 22px, -6px 18px;
+    opacity: 0.2;
+  }
+}
+
+@keyframes heat-sheen {
+  0% {
+    background-position: 0 0, -220% 0;
+    opacity: 0.35;
+  }
+  35% { opacity: 0.75; }
+  100% {
+    background-position: 0 0, 220% 0;
+    opacity: 0.35;
+  }
+}
+
+@keyframes season-hint {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
 
 .tabs {
   display: flex;
@@ -799,7 +880,9 @@ button {
 
 .matrix {
   border-collapse: collapse;
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
+  display: inline-table;
   table-layout: auto;
   background: white;
 }
