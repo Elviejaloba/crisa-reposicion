@@ -881,7 +881,6 @@ button {
 .matrix {
   border-collapse: collapse;
   width: max-content;
-  min-width: 100%;
   display: inline-table;
   table-layout: auto;
   background: white;
