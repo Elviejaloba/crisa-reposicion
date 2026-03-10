@@ -9,19 +9,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 try:
     from zoneinfo import ZoneInfo
     AR_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 except Exception:
-    AR_TZ = None
+    AR_TZ = timezone(timedelta(hours=-3))
 import database as db
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("api")
 
 def now_ar():
-    return datetime.now(AR_TZ) if AR_TZ else datetime.now()
+    return datetime.now(AR_TZ)
 
 # Asegurar estructura de base al iniciar servicio API (sin bloquear el arranque)
 app = FastAPI(title="Sistema de Análisis Comercial")
