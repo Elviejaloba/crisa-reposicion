@@ -21,7 +21,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("api")
 
 def now_ar():
-    return datetime.now(AR_TZ)
+    # Guardar sin tzinfo para evitar que Postgres convierta a UTC en TIMESTAMP sin zona
+    return datetime.now(AR_TZ).replace(tzinfo=None)
 
 # Asegurar estructura de base al iniciar servicio API (sin bloquear el arranque)
 app = FastAPI(title="Sistema de Análisis Comercial")
