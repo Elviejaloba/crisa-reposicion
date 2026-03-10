@@ -12,6 +12,10 @@ const defaultApiBase =
     : 'http://127.0.0.1:5003'
 const API_BASE = (import.meta as any).env?.VITE_API_BASE || defaultApiBase
 const LOGO_URL = (import.meta as any).env?.VITE_LOGO_URL || '/logo-crisa.png'
+const APP_VERSION =
+  (import.meta as any).env?.VITE_APP_VERSION ||
+  (import.meta as any).env?.VITE_GIT_SHA ||
+  'dev'
 
 const FAMILIAS = ['AR', 'BL', 'MC', 'ME', 'MU', 'OT', 'PR', 'PV', 'SI', 'TA']
 const DIAS = [15, 30, 60]
@@ -889,7 +893,10 @@ export default function App() {
           <p>Distribución basada en venta y stock real.</p>
         </div>
         <div className="sync">
-          <div className="sync-time">{formatSync(String(lastSyncLabel))}</div>
+          <div className="sync-time-row">
+            <div className="sync-time">{formatSync(String(lastSyncLabel))}</div>
+            <span className="version-badge">v{APP_VERSION}</span>
+          </div>
           <div className="sync-label">Última actualización</div>
         </div>
       </div>
