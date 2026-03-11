@@ -1243,7 +1243,8 @@ button {
 }
 
 .chart {
-  height: 340px;
+  min-height: 340px;
+  height: auto;
 }
 
 .kpi-section {
@@ -1256,6 +1257,7 @@ button {
   padding: 10px 12px;
   background: #fff;
   position: relative;
+  overflow: hidden;
 }
 
 .chart-head {
@@ -1263,6 +1265,10 @@ button {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 6px;
+}
+
+.chart-body {
+  padding-bottom: 6px;
 }
 
 .chart-title {
@@ -1718,11 +1724,16 @@ button {
     font-size: 18px;
   }
   .chart {
-    height: 220px;
+    min-height: 240px;
+    height: auto;
   }
   .chart-card {
     padding: 8px 10px;
     border-radius: 12px;
+  }
+  .chart-head {
+    flex-wrap: wrap;
+    gap: 6px;
   }
   .chart-title {
     font-size: 12px;
