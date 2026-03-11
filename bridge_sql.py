@@ -453,6 +453,8 @@ def get_data():
                 ISNULL(FAMILIA_ART.COD_AGR,'') AS [Cod. Familia (Articulo)] ,
                 FAMILIA_ART.NOM_AGR AS [Descripcion Familia (Articulo)] ,
                 SUM(CASE CTA03.TCOMP_IN_V WHEN 'CC' THEN(-1) ELSE(1) END * CTA03.CANTIDAD / CASE WHEN CAN_EQUI_V = 0 THEN 1 ELSE CAN_EQUI_V END) AS [Cantidad venta] ,
+                SUM(CASE CTA03.TCOMP_IN_V WHEN 'CC' THEN(-1) ELSE(1) END * CTA03.CANTIDAD) AS [Cantidad venta ERP] ,
+                MAX(CASE WHEN CAN_EQUI_V = 0 THEN 1 ELSE CAN_EQUI_V END) AS [Factor Equiv] ,
                 MEDIDA_STOCK.SIGLA_MEDIDA AS [U.M. stock] ,
                 SUM(CASE CTA03.TCOMP_IN_V WHEN 'CC' THEN (-1) ELSE (1) END *
                     CASE 'BIMONCTE'

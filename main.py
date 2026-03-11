@@ -130,12 +130,27 @@ def normalize_ventas_columns(records: List[dict]) -> List[dict]:
     normalized = []
     for r in records:
         cant_val = r.get("Cantidad venta", r.get("cantidad_venta", 0))
+        cant_erp_val = r.get("Cantidad venta ERP", r.get("cantidad_venta_erp", None))
+        factor_val = r.get("Factor Equiv", r.get("can_equi_v", None))
         imp_val = r.get("Imp. prop. c/IVA", r.get("importe", 0))
         # Buscar cod_articulo en mÃºltiples formatos
         cod_art = r.get("Cod. Articulo", r.get("Cód. Artículo", r.get("cod_articulo", "")))
         cod_base = r.get("Cod. base / articulo", r.get("Cód. base / artículo", r.get("cod_base", "")))
         desc_base = r.get("Desc. Base / Articulo", r.get("Desc. Base / ArtÃ­culo", r.get("desc_base", "")))
         sinonimo = r.get("Sinonimo", r.get("SinÃ³nimo", r.get("sinonimo", "")))
+        try:
+            factor_num = float(factor_val) if factor_val is not None else 0.0
+        except Exception:
+            factor_num = 0.0
+        try:
+            cant_erp_num = float(cant_erp_val) if cant_erp_val is not None else None
+        except Exception:
+            cant_erp_num = None
+        if cant_erp_num is None and factor_num:
+            try:
+                cant_erp_num = float(cant_val) * factor_num
+            except Exception:
+                cant_erp_num = None
         normalized.append({
             "cod_articulo": str(cod_art) if cod_art else "",
             "descripcion": str(r.get("Descripcion", r.get("DescripciÃ³n", r.get("descripcion", "")))),
@@ -146,6 +161,8 @@ def normalize_ventas_columns(records: List[dict]) -> List[dict]:
             "nro_sucursal": r.get("Nro. Sucursal", r.get("nro_sucursal", 0)),
             "fecha": str(r.get("Fecha", r.get("fecha", ""))),
             "cantidad_venta": float(cant_val) if cant_val is not None else 0.0,
+            "cantidad_venta_erp": float(cant_erp_num) if cant_erp_num is not None else 0.0,
+            "can_equi_v": float(factor_num) if factor_num else 0.0,
             "importe": float(imp_val) if imp_val is not None else 0.0,
             "familia": str(r.get("Cod. Familia (Articulo)", r.get("CÃ³d. Familia (ArtÃ­culo)", r.get("familia", "")))),
             "desc_familia": str(r.get("Descripcion Familia (Articulo)", r.get("DescripciÃ³n Familia (ArtÃ­culo)", r.get("desc_familia", "")))),

@@ -98,6 +98,8 @@ def init_database():
             nro_sucursal INTEGER,
             fecha DATE,
             cantidad_venta DECIMAL(18,4) DEFAULT 0,
+            cantidad_venta_erp DECIMAL(18,4) DEFAULT 0,
+            can_equi_v DECIMAL(18,6) DEFAULT 0,
             importe DECIMAL(18,4) DEFAULT 0,
             familia VARCHAR(100),
             desc_familia VARCHAR(200),
@@ -224,6 +226,8 @@ def init_database():
         cur.execute("ALTER TABLE ventas ADD COLUMN IF NOT EXISTS cod_base VARCHAR(100)")
         cur.execute("ALTER TABLE ventas ADD COLUMN IF NOT EXISTS desc_base TEXT")
         cur.execute("ALTER TABLE ventas ADD COLUMN IF NOT EXISTS sinonimo VARCHAR(100)")
+        cur.execute("ALTER TABLE ventas ADD COLUMN IF NOT EXISTS cantidad_venta_erp DECIMAL(18,4) DEFAULT 0")
+        cur.execute("ALTER TABLE ventas ADD COLUMN IF NOT EXISTS can_equi_v DECIMAL(18,6) DEFAULT 0")
         cur.execute("ALTER TABLE ventas ADD COLUMN IF NOT EXISTS unidad_normalizada VARCHAR(50)")
         cur.execute("ALTER TABLE ventas ADD COLUMN IF NOT EXISTS rubro_macro VARCHAR(50)")
         cur.execute("ALTER TABLE ventas ADD COLUMN IF NOT EXISTS categoria_unm VARCHAR(50)")
@@ -504,6 +508,8 @@ def insert_ventas(records: list, timestamp: datetime):
             r.get("nro_sucursal", 0),
             r.get("fecha"),
             r.get("cantidad_venta", 0),
+            r.get("cantidad_venta_erp", 0),
+            r.get("can_equi_v", 0),
             r.get("importe", 0),
             r.get("familia", ""),
             r.get("desc_familia", ""),
@@ -520,7 +526,7 @@ def insert_ventas(records: list, timestamp: datetime):
     
     execute_values(cur, """
         INSERT INTO ventas (cod_articulo, descripcion, sinonimo, cod_base, desc_base, sucursal, nro_sucursal, fecha,
-                           cantidad_venta, importe, familia, desc_familia, um_stock,
+                           cantidad_venta, cantidad_venta_erp, can_equi_v, importe, familia, desc_familia, um_stock,
                            unidad_normalizada, rubro_macro, categoria_unm, tipo_venta, sub_rubro, sync_timestamp)
         VALUES %s
     """, values)
@@ -547,6 +553,8 @@ def upsert_ventas(records: list, timestamp: datetime):
             r.get("nro_sucursal", 0),
             r.get("fecha"),
             r.get("cantidad_venta", 0),
+            r.get("cantidad_venta_erp", 0),
+            r.get("can_equi_v", 0),
             r.get("importe", 0),
             r.get("familia", ""),
             r.get("desc_familia", ""),
@@ -564,7 +572,7 @@ def upsert_ventas(records: list, timestamp: datetime):
     execute_values(cur, """
         INSERT INTO ventas (
             cod_articulo, descripcion, sinonimo, cod_base, desc_base, sucursal, nro_sucursal, fecha,
-            cantidad_venta, importe, familia, desc_familia, um_stock,
+            cantidad_venta, cantidad_venta_erp, can_equi_v, importe, familia, desc_familia, um_stock,
             unidad_normalizada, rubro_macro, categoria_unm, tipo_venta, sub_rubro, sync_timestamp
         )
         VALUES %s
@@ -576,6 +584,8 @@ def upsert_ventas(records: list, timestamp: datetime):
             desc_base = EXCLUDED.desc_base,
             nro_sucursal = EXCLUDED.nro_sucursal,
             cantidad_venta = EXCLUDED.cantidad_venta,
+            cantidad_venta_erp = EXCLUDED.cantidad_venta_erp,
+            can_equi_v = EXCLUDED.can_equi_v,
             importe = EXCLUDED.importe,
             familia = EXCLUDED.familia,
             desc_familia = EXCLUDED.desc_familia,
@@ -1063,23 +1073,24 @@ def get_matriz_distribucion(
                 b.cod_articulo,
                 b.sucursal,
                 COALESCE(s.stock_sucursal, 0) AS stock_sucursal,
-                COALESCE(v.ventas_periodo, 0) AS ventas_periodo,
-                COALESCE(v.ventas_periodo, 0) / %s AS venta_promedio_diaria,
+                COALESCE(v.ventas_periodo_stock, 0) AS ventas_periodo_stock,
+                COALESCE(v.ventas_periodo_erp, 0) AS ventas_periodo_erp,
+                COALESCE(v.ventas_periodo_stock, 0) / %s AS venta_promedio_diaria,
                 CASE
-                    WHEN COALESCE(v.ventas_periodo, 0) = 0 THEN 0
-                    ELSE COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo, 0) / %s) * 30, 0)
+                    WHEN COALESCE(v.ventas_periodo_stock, 0) = 0 THEN 0
+                    ELSE COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo_stock, 0) / %s) * 30, 0)
                 END AS meses_stock,
-                (COALESCE(v.ventas_periodo, 0) - COALESCE(s.stock_sucursal, 0)) AS necesidad,
+                (COALESCE(v.ventas_periodo_stock, 0) - COALESCE(s.stock_sucursal, 0)) AS necesidad,
                 CASE
-                    WHEN COALESCE(v.ventas_periodo, 0) = 0 THEN 'Sin rotaciÃ³n'
-                    WHEN (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo, 0) / %s) * 30, 0)) < 1 THEN 'Quiebre de stock'
-                    WHEN (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo, 0) / %s) * 30, 0)) >= 1
-                         AND (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo, 0) / %s) * 30, 0)) < 2 THEN 'Stock de Seguridad'
-                    WHEN (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo, 0) / %s) * 30, 0)) >= 2
-                         AND (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo, 0) / %s) * 30, 0)) < 3 THEN 'Pto de Pedido'
-                    WHEN (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo, 0) / %s) * 30, 0)) >= 3
-                         AND (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo, 0) / %s) * 30, 0)) < 4 THEN 'OK'
-                    WHEN (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo, 0) / %s) * 30, 0)) >= 4 THEN 'Sobrestock'
+                    WHEN COALESCE(v.ventas_periodo_stock, 0) = 0 THEN 'Sin rotaciÃ³n'
+                    WHEN (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo_stock, 0) / %s) * 30, 0)) < 1 THEN 'Quiebre de stock'
+                    WHEN (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo_stock, 0) / %s) * 30, 0)) >= 1
+                         AND (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo_stock, 0) / %s) * 30, 0)) < 2 THEN 'Stock de Seguridad'
+                    WHEN (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo_stock, 0) / %s) * 30, 0)) >= 2
+                         AND (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo_stock, 0) / %s) * 30, 0)) < 3 THEN 'Pto de Pedido'
+                    WHEN (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo_stock, 0) / %s) * 30, 0)) >= 3
+                         AND (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo_stock, 0) / %s) * 30, 0)) < 4 THEN 'OK'
+                    WHEN (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo_stock, 0) / %s) * 30, 0)) >= 4 THEN 'Sobrestock'
                     ELSE 'OK'
                 END AS alerta_stock,
                 COALESCE(cdd.stock_cdd, 0) AS stock_cdd,
@@ -1216,7 +1227,11 @@ def get_sugerencia_distribucion(
 
     query = f"""
         WITH ventas_p AS (
-            SELECT cod_articulo, {sucursal_case} AS sucursal, SUM(cantidad_venta) AS ventas_periodo
+            SELECT
+                cod_articulo,
+                {sucursal_case} AS sucursal,
+                SUM(cantidad_venta) AS ventas_periodo_stock,
+                SUM(COALESCE(cantidad_venta_erp, cantidad_venta)) AS ventas_periodo_erp
             FROM ventas
             WHERE fecha >= %s AND fecha <= %s
             GROUP BY 1,2
@@ -1322,7 +1337,7 @@ def get_sugerencia_distribucion(
             is_nuevo,
             stock_sucursal,
             stock_cdd,
-            ventas_periodo,
+            ventas_periodo_erp AS ventas_periodo,
             venta_promedio_diaria,
             meses_stock,
             CASE
@@ -1331,7 +1346,7 @@ def get_sugerencia_distribucion(
             END AS cobertura_dias,
             alerta_stock,
             CASE
-                WHEN ventas_periodo = 0 THEN 'Sin rotacion'
+                WHEN ventas_periodo_stock = 0 THEN 'Sin rotacion'
                 WHEN meses_stock < 1 THEN 'Critica'
                 WHEN meses_stock < 2 THEN 'Alta'
                 WHEN meses_stock < 3 THEN 'Media'

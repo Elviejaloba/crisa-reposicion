@@ -567,7 +567,7 @@ export default function App() {
     cod_articulo: 'Codigo especifico del artículo',
     stock_sucursal: 'Stock disponible en la sucursal',
     stock_cdd: 'Stock disponible en CDD',
-    ventas_periodo: `Ventas del periodo seleccionado (${periodoVentas})`,
+    ventas_periodo: `Ventas del periodo seleccionado (ERP) (${periodoVentas})`,
     venta_promedio_diaria: `Ventas promedio por dia (${periodoVentas})`,
     cobertura_dias: 'Dias de cobertura: stock / venta diaria',
     meses_stock: 'Meses de cobertura: stock / venta mensual',
