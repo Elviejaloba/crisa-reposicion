@@ -25,13 +25,38 @@ load_env(os.path.join(os.path.dirname(__file__), ".env"))
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 SSL_VERIFY = False  # Cambiar a True si no hay problemas de certificados
 
+def _pick_driver() -> str:
+    preferred = os.environ.get("ODBC_DRIVER", "").strip()
+    if preferred:
+        return preferred
+    available = pyodbc.drivers()
+    for name in (
+        "ODBC Driver 18 for SQL Server",
+        "ODBC Driver 17 for SQL Server",
+        "ODBC Driver 11 for SQL Server",
+        "SQL Server",
+    ):
+        if name in available:
+            return name
+    return available[-1] if available else "SQL Server"
+
+
+_driver = _pick_driver()
+_encrypt = os.environ.get("ODBC_ENCRYPT", "").strip().lower()
+_trust = os.environ.get("ODBC_TRUST_CERT", "").strip().lower()
+if not _encrypt:
+    _encrypt = "yes" if "ODBC Driver 1" in _driver else "no"
+if _encrypt == "yes" and not _trust:
+    _trust = "yes"
+
 conn_str = (
-    "Driver={ODBC Driver 11 for SQL Server};"
+    f"Driver={{{_driver}}};"
     "Server=tangoserver;"
     "Database=crisa_real1;"
     "UID=Axoft;"
     "PWD=Axoft;"
-    "Encrypt=no;"
+    f"Encrypt={_encrypt};"
+    f"TrustServerCertificate={_trust};"
 )
 
 # ==============================================================
