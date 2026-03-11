@@ -348,13 +348,16 @@ export default function App() {
       }
     }
     apply()
-    if ('addEventListener' in mq) {
-      mq.addEventListener('change', apply)
-      return () => mq.removeEventListener('change', apply)
+    const legacyMq = mq as MediaQueryList & {
+      addListener?: (listener: (this: MediaQueryList, ev: MediaQueryListEvent) => void) => void
+      removeListener?: (listener: (this: MediaQueryList, ev: MediaQueryListEvent) => void) => void
     }
-    // Safari fallback
-    mq.addListener(apply)
-    return () => mq.removeListener(apply)
+    if (legacyMq.addEventListener) {
+      legacyMq.addEventListener('change', apply)
+      return () => legacyMq.removeEventListener('change', apply)
+    }
+    legacyMq.addListener?.(apply)
+    return () => legacyMq.removeListener?.(apply)
   }, [])
 
   useEffect(() => {
