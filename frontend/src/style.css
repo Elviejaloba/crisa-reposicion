@@ -1580,6 +1580,9 @@ button {
     padding: 4px 10px;
     font-size: 11px;
   }
+  .chip-row {
+    gap: 6px;
+  }
   .multi {
     max-width: 100%;
   }
@@ -1607,8 +1610,133 @@ button {
     font-size: 10px;
     padding: 3px 8px;
   }
+  .tabs {
+    gap: 8px;
+    margin: 16px 0 8px;
+  }
+  .tabs button {
+    padding: 8px 12px;
+    font-size: 12px;
+    border-radius: 10px;
+  }
+  .panel {
+    padding: 14px;
+    border-radius: 16px;
+  }
+  .panel-head {
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .panel-head h2 {
+    font-size: 18px;
+  }
+  .panel-head p {
+    font-size: 12px;
+  }
+  .quick-filters {
+    gap: 6px;
+  }
+  .quick-chip {
+    font-size: 10px;
+    padding: 4px 8px;
+  }
+  .sort-box {
+    min-width: 0;
+    width: 100%;
+    padding: 6px 8px;
+    border-radius: 12px;
+  }
+  .sort-box select {
+    font-size: 11px;
+  }
+  .matrix-wrap,
+  .table-wrap {
+    max-height: 55vh;
+    border-radius: 12px;
+  }
+  .matrix thead th {
+    font-size: 10px;
+    padding: 6px;
+    letter-spacing: 0.03em;
+  }
+  .matrix td {
+    padding: 4px 5px;
+    font-size: 11px;
+  }
+  .matrix td.text {
+    max-width: 160px;
+  }
+  .simple th,
+  .simple td {
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+  .kpi-grid {
+    gap: 12px;
+    margin: 12px 0;
+  }
+  .kpi-card {
+    padding: 12px;
+  }
+  .kpi-title {
+    font-size: 10px;
+  }
+  .kpi-value {
+    font-size: 18px;
+  }
   .chart {
-    height: 260px;
+    height: 220px;
+  }
+  .chart-card {
+    padding: 8px 10px;
+    border-radius: 12px;
+  }
+  .chart-title {
+    font-size: 12px;
+  }
+  .focus-btn,
+  .focus-close {
+    font-size: 11px;
+    padding: 5px 9px;
+  }
+  .focus-panel {
+    padding: 10px 12px;
+    border-radius: 14px;
+  }
+  .kpi-ranking {
+    padding: 10px 12px;
+    border-radius: 12px;
+  }
+  .kpi-ranking-head h3 {
+    font-size: 12px;
+  }
+  .kpi-ranking-head p {
+    font-size: 11px;
+  }
+  .kpi-ranking-actions {
+    max-width: 100%;
+  }
+  .kpi-ranking-total {
+    font-size: 11px;
+    margin-left: 0;
+  }
+  .ranking-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .ranking-value {
+    text-align: left;
+  }
+  .empty {
+    padding: 14px;
+    font-size: 12px;
+  }
+  .overlay-text {
+    font-size: 11px;
+  }
+  .spinner {
+    width: 30px;
+    height: 30px;
   }
 }
 
