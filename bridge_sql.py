@@ -454,16 +454,26 @@ def get_data():
 
         # ============================================================
         # VENTAS - INCREMENTAL: Solo desde última fecha o 7 días atrás
-        # ============================================================
-        if ultima_fecha_ventas and total_ventas_existentes > 0:
-            # Restar 3 días para capturar modificaciones recientes
+        ventas_desde_override = os.environ.get("VENTAS_DESDE", "").strip()
+        ventas_dias_override = os.environ.get("VENTAS_DIAS", "").strip()
+        if ventas_desde_override:
+            fecha_desde = ventas_desde_override
+            print(f"\n  [VENTAS] Override desde {fecha_desde}")
+        elif ventas_dias_override:
+            try:
+                dias_override = int(ventas_dias_override)
+            except Exception:
+                dias_override = 120
+            fecha_desde = (datetime.now() - timedelta(days=dias_override)).strftime("%d/%m/%Y")
+            print(f"\n  [VENTAS] Override ?ltimos {dias_override} d?as desde {fecha_desde}")
+        elif ultima_fecha_ventas and total_ventas_existentes > 0:
+            # Restar 3 d?as para capturar modificaciones recientes
             fecha_desde = (datetime.strptime(ultima_fecha_ventas, "%Y-%m-%d") - timedelta(days=3)).strftime("%d/%m/%Y")
             print(f"\n  [VENTAS] Modo incremental desde {fecha_desde}")
         else:
-            # Si no hay histórico, traer solo ventana reciente (no fija 2024)
+            # Si no hay hist?rico, traer solo ventana reciente (no fija 2024)
             fecha_desde = (datetime.now() - timedelta(days=120)).strftime("%d/%m/%Y")
-            print(f"\n  [VENTAS] Sin histórico: ventana reciente desde {fecha_desde}")
-
+            print(f"\n  [VENTAS] Sin hist?rico: ventana reciente desde {fecha_desde}")
         fecha_hasta = datetime.now().strftime("%d/%m/%Y")
 
         query_ventas = f"""
