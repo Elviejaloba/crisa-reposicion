@@ -1,4 +1,4 @@
-import os
+﻿import os
 import pyodbc
 import pandas as pd
 import requests
@@ -60,25 +60,25 @@ conn_str = (
 )
 
 # ==============================================================
-# URL del API - LOCAL / PRODUCCIÓN
+# URL del API - LOCAL / PRODUCCIÃ“N
 # ==============================================================
 # Por defecto apunta al API local. Se puede sobrescribir con SYNC_URL.
 API_URL = os.environ.get("SYNC_URL", "http://localhost:5000")
 
-# URL alternativa para DESARROLLO (si necesitás un endpoint remoto):
+# URL alternativa para DESARROLLO (si necesitÃ¡s un endpoint remoto):
 # API_URL = "https://tu-api-remota.com"
 
 SYNC_INTERVAL = 3600  # 60 minutos entre sincronizaciones
-BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "500"))  # Lotes más chicos para evitar timeouts
+BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "500"))  # Lotes mÃ¡s chicos para evitar timeouts
 MAX_RETRIES = 3      # Reintentos por lote
 DB_MAX_RETRIES = int(os.environ.get("DB_MAX_RETRIES", "4"))
 DB_RETRY_BACKOFF = [2, 5, 10, 20]
 DB_LOCK_TIMEOUT_MS = int(os.environ.get("DB_LOCK_TIMEOUT_MS", "30000"))
 
-SYNC_HORARIO_INICIO = dt_time(8, 0)   # Desde las 8:00
-SYNC_HORARIO_FIN = dt_time(21, 0)     # Hasta las 21:00
+SYNC_HORARIO_INICIO = dt_time(23, 0)   # Desde las 23:00
+SYNC_HORARIO_FIN = dt_time(22, 0)     # Hasta las 22:00
 SYNC_DIAS_HABILITADOS = {0, 1, 2, 3, 4, 5}  # 0=Lun ... 5=Sab
-SYNC_SOLO_EN_HORARIO = True  # True = solo sync dentro del horario y días definidos
+SYNC_SOLO_EN_HORARIO = True  # True = solo sync dentro del horario y dÃ­as definidos
 
 SYNC_ONLY = os.environ.get("SYNC_ONLY", "").strip().lower()
 _SYNC_ONLY_SET = {s.strip() for s in SYNC_ONLY.split(",") if s.strip()}
@@ -107,14 +107,14 @@ def filtrar_incremental_local(df, key_cols, snapshot_path, label):
 
         prev = pd.read_pickle(snapshot_path)
         if "__sig__" not in prev.columns:
-            print(f"    Aviso: snapshot previo inválido para {label}, se envía completo.")
+            print(f"    Aviso: snapshot previo invÃ¡lido para {label}, se envÃ­a completo.")
             return df, True
         prev = prev[key_cols + ["__sig__"]]
         merged = curr[key_cols + ["__sig__"]].merge(
             prev, on=key_cols, how="left", suffixes=("", "_prev")
         )
         if "__sig__prev" not in merged.columns:
-            print(f"    Aviso: snapshot previo incompleto para {label}, se envía completo.")
+            print(f"    Aviso: snapshot previo incompleto para {label}, se envÃ­a completo.")
             return df, True
         changed = merged["__sig__"] != merged["__sig__prev"]
         df_filtrado = df.loc[changed].copy()
@@ -149,7 +149,7 @@ def normalizar_unidad(cod):
 def rubro_macro(cod_familia):
     cod = str(cod_familia or "").strip().upper()
     if cod.startswith("ME"):
-        return "Mercería"
+        return "MercerÃ­a"
     if cod == "BL":
         return "Blanco"
     if cod in {"TA", "TI", "TV", "TF", "TM", "TD", "TC", "PV", "82", "84"}:
@@ -209,10 +209,10 @@ def sub_rubro(cod_articulo, descripcion):
         return "Remeras"
     if cod.startswith("TC") and desc.startswith("PACK"):
         return "Pack de Remeras"
-    if cod.startswith("OT") and (desc.startswith("PAÑO") or desc.startswith("MOPA") or desc.startswith("REJI") or desc.startswith("FRAN")):
+    if cod.startswith("OT") and (desc.startswith("PAÃ‘O") or desc.startswith("MOPA") or desc.startswith("REJI") or desc.startswith("FRAN")):
         return "Limpieza"
     if (cod.startswith("AR") and (desc.startswith("AROM") or desc.startswith("DIFU"))) or (cod.startswith("HS") and desc.startswith("HOMES")):
-        return "Aromatización"
+        return "AromatizaciÃ³n"
     if cod.startswith("AR"):
         return descripcion
     return "Sin Clasificar"
@@ -273,7 +273,7 @@ def esta_en_horario_sync():
 
 
 def get_sync_info():
-    """Obtener información de sincronización desde el API"""
+    """Obtener informaciÃ³n de sincronizaciÃ³n desde el API"""
     try:
         response = requests.get(f"{API_URL}/sync-info", timeout=30, verify=SSL_VERIFY)
         if response.status_code == 200:
@@ -295,7 +295,7 @@ def esperar_api(max_intentos=5, espera_seg=5):
 
 
 def enviar_en_lotes(url, nombre, df, batch_size=2000, incremental=True):
-    """Enviar datos en lotes pequeños con UPSERT y reintentos"""
+    """Enviar datos en lotes pequeÃ±os con UPSERT y reintentos"""
     total = len(df)
     if total == 0:
         return True, 0
@@ -334,7 +334,7 @@ def enviar_en_lotes(url, nombre, df, batch_size=2000, incremental=True):
                 elif response.status_code in [502, 503, 504]:
                     print(f"    Timeout servidor (HTTP {response.status_code}), reintentando...")
                     if intento == MAX_RETRIES - 1:
-                        print(f"    Error persistente en lote {lote_num} después de {MAX_RETRIES} intentos")
+                        print(f"    Error persistente en lote {lote_num} despuÃ©s de {MAX_RETRIES} intentos")
                         break
                 else:
                     print(f"    Error en lote {lote_num}: {response.status_code} - {response.text[:200]}")
@@ -354,22 +354,22 @@ def enviar_en_lotes(url, nombre, df, batch_size=2000, incremental=True):
 
 def get_data():
     print("=" * 60)
-    print("BRIDGE SQL - Sincronización Incremental Tango -> API")
+    print("BRIDGE SQL - SincronizaciÃ³n Incremental Tango -> API")
     print("=" * 60)
     print(f"Servidor: tangoserver")
     print(f"Base de datos: crisa_real1")
     print(f"URL destino: {API_URL}")
-    print(f"Tamaño de lote: {BATCH_SIZE} registros")
-    print(f"Modo: EJECUCIÓN ÚNICA (UPSERT)")
+    print(f"TamaÃ±o de lote: {BATCH_SIZE} registros")
+    print(f"Modo: EJECUCIÃ“N ÃšNICA (UPSERT)")
     print("=" * 60)
 
     try:
-        print(f"\n[{datetime.now()}] Iniciando sincronización...")
+        print(f"\n[{datetime.now()}] Iniciando sincronizaciÃ³n...")
         if not esperar_api():
-            print("  Aviso: API no disponible, se reintentará en el próximo ciclo.")
+            print("  Aviso: API no disponible, se reintentarÃ¡ en el prÃ³ximo ciclo.")
             return
         
-        # Obtener info de última sincronización
+        # Obtener info de Ãºltima sincronizaciÃ³n
         sync_info = get_sync_info()
         ultima_fecha_ventas = sync_info.get("ultima_fecha_ventas")
         total_ventas_existentes = sync_info.get("total_ventas", 0)
@@ -388,13 +388,13 @@ def get_data():
         print(f"    - Costos: {total_costos_existentes}")
         print(f"    - Articulos: {total_articulos_existentes}")
         if ultima_fecha_ventas:
-            print(f"    - Última fecha ventas: {ultima_fecha_ventas}")
+            print(f"    - Ãšltima fecha ventas: {ultima_fecha_ventas}")
         if ultima_sync_precios:
-            print(f"    - Última sync precios: {ultima_sync_precios}")
+            print(f"    - Ãšltima sync precios: {ultima_sync_precios}")
         if ultima_sync_articulos:
-            print(f"    - Última sync artículos: {ultima_sync_articulos}")
+            print(f"    - Ãšltima sync artÃ­culos: {ultima_sync_articulos}")
         
-        # Determinar si es primera sincronización
+        # Determinar si es primera sincronizaciÃ³n
         es_primera_sync = total_saldos_existentes == 0
 
         conn = pyodbc.connect(conn_str, timeout=30, autocommit=True)
@@ -617,7 +617,7 @@ def get_data():
         # ============================================================
         # COSTOS - Siempre actualizar (UPSERT)
         # ============================================================
-        print(f"\n  [COSTOS] Consultando costos de reposición...")
+        print(f"\n  [COSTOS] Consultando costos de reposiciÃ³n...")
         
         query_costos = """
             SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
@@ -651,7 +651,7 @@ def get_data():
         """
 
         df_costos = read_sql_with_retry(query_costos, conn, label="costos")
-        # Costos no tienen fecha de modificación confiable -> se envían completos (UPSERT)
+        # Costos no tienen fecha de modificaciÃ³n confiable -> se envÃ­an completos (UPSERT)
         print(f"    Obtenidos: {len(df_costos)} registros")
         df_costos_full = df_costos
         df_costos, _ = filtrar_incremental_local(
@@ -662,9 +662,9 @@ def get_data():
         )
 
         # ============================================================
-        # ARTÍCULOS - Nómina base
+        # ARTÃCULOS - NÃ³mina base
         # ============================================================
-        print(f"\n  [ARTICULOS] Consultando nómina de artículos...")
+        print(f"\n  [ARTICULOS] Consultando nÃ³mina de artÃ­culos...")
         query_articulos = """
             SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
             SET DATEFORMAT DMY
@@ -736,10 +736,10 @@ def get_data():
                 guardar_snapshot(df_saldo_full, ["Cod. Articulo", "Cod. Deposito", "Sucursal"], SALDO_SNAPSHOT, "saldos")
             print(f"    [OK] Saldos sincronizados: {n} registros")
 
-        # Artículos (primero para poblar catálogos)
+        # ArtÃ­culos (primero para poblar catÃ¡logos)
         if len(df_articulos) > 0:
             ok, n = enviar_en_lotes(API_URL, "articulos", df_articulos, BATCH_SIZE)
-            print(f"    [OK] Artículos sincronizados: {n} registros")
+            print(f"    [OK] ArtÃ­culos sincronizados: {n} registros")
         
         # Precios
         if len(df_precios) > 0:
@@ -758,18 +758,18 @@ def get_data():
             ok, n = enviar_en_lotes(API_URL, "ventas", df_ventas, BATCH_SIZE)
             print(f"    [OK] Ventas sincronizadas: {n} registros")
         
-        # Recalcular métricas
-        print(f"\n  Recalculando métricas...")
+        # Recalcular mÃ©tricas
+        print(f"\n  Recalculando mÃ©tricas...")
         try:
             response = requests.post(f"{API_URL}/recalcular-metricas", timeout=120, verify=SSL_VERIFY)
             if response.status_code == 200:
-                print(f"    [OK] Métricas recalculadas")
+                print(f"    [OK] MÃ©tricas recalculadas")
             else:
-                print(f"    [AVISO] Métricas: {response.status_code}")
+                print(f"    [AVISO] MÃ©tricas: {response.status_code}")
         except Exception as e:
-            print(f"    [AVISO] No se pudieron recalcular métricas: {e}")
+            print(f"    [AVISO] No se pudieron recalcular mÃ©tricas: {e}")
 
-        # Diagnóstico de calidad de datos post-sync
+        # DiagnÃ³stico de calidad de datos post-sync
         try:
             q = requests.get(f"{API_URL}/quality", timeout=30, verify=SSL_VERIFY)
             if q.status_code == 200:
@@ -780,7 +780,7 @@ def get_data():
                 print(f"    - Saldos: {quality.get('saldo', 0)}")
                 print(f"    - Saldos historial: {quality.get('saldo_historial', 0)}")
                 print(f"    - Ventas: {quality.get('ventas', 0)}")
-                print(f"    - Métricas: {quality.get('metricas', 0)}")
+                print(f"    - MÃ©tricas: {quality.get('metricas', 0)}")
                 print(f"    - Precios: {quality.get('precios', 0)}")
                 print(f"    - Costos: {quality.get('costos', 0)}")
                 print(f"    - Categorias: {quality.get('categorias', 0)}")
@@ -791,13 +791,13 @@ def get_data():
         except Exception as e:
             print(f"    [AVISO] No se pudo consultar calidad post-sync: {e}")
 
-        print(f"\n[{datetime.now()}] Sincronización completada exitosamente")
+        print(f"\n[{datetime.now()}] SincronizaciÃ³n completada exitosamente")
 
     except pyodbc.Error as db_error:
         resumen = _resumen_error_db(db_error)
         print(f"[{datetime.now()}] Error de base de datos: {resumen}")
     except requests.exceptions.RequestException as req_error:
-        print(f"[{datetime.now()}] Error de conexión al API: {req_error}")
+        print(f"[{datetime.now()}] Error de conexiÃ³n al API: {req_error}")
     except Exception as e:
         print(f"[{datetime.now()}] Error general: {e}")
         import traceback
@@ -814,4 +814,6 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"[{datetime.now()}] Error en ciclo principal: {e}")
         time.sleep(SYNC_INTERVAL)
+
+
 
