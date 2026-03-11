@@ -26,12 +26,12 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 SSL_VERIFY = False  # Cambiar a True si no hay problemas de certificados
 
 conn_str = (
-    "Driver={SQL Server};"
+    "Driver={ODBC Driver 11 for SQL Server};"
     "Server=tangoserver;"
     "Database=crisa_real1;"
     "UID=Axoft;"
     "PWD=Axoft;"
-    "Encrypt=no;"
+    "Encrypt=yes;"
     "TrustServerCertificate=yes;"
 )
 
