@@ -1022,7 +1022,6 @@ export default function App() {
             Próxima actualización: cada 60 min
           </div>
         </div>
-        <span className="version-badge">v{APP_VERSION}</span>
       </div>
 
       <section className="filters" data-open={filtersOpen ? 'true' : 'false'}>
