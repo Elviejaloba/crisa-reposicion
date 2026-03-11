@@ -129,6 +129,30 @@ def normalize_saldo_columns(records: List[dict]) -> List[dict]:
 def normalize_ventas_columns(records: List[dict]) -> List[dict]:
     normalized = []
     for r in records:
+        def _to_float(val):
+            if val is None:
+                return None
+            if isinstance(val, str):
+                s = val.strip()
+                if not s:
+                    return None
+                # Normaliza separadores: "1.234,56" -> "1234.56", "1234,56" -> "1234.56"
+                if "," in s and "." in s:
+                    if s.rfind(",") > s.rfind("."):
+                        s = s.replace(".", "").replace(",", ".")
+                    else:
+                        s = s.replace(",", "")
+                else:
+                    s = s.replace(",", ".")
+                try:
+                    return float(s)
+                except Exception:
+                    return None
+            try:
+                return float(val)
+            except Exception:
+                return None
+
         cant_val = r.get("Cantidad venta", r.get("cantidad_venta", 0))
         cant_erp_val = r.get("Cantidad venta ERP", r.get("cantidad_venta_erp", None))
         factor_val = r.get("Factor Equiv", r.get("can_equi_v", None))
@@ -138,19 +162,11 @@ def normalize_ventas_columns(records: List[dict]) -> List[dict]:
         cod_base = r.get("Cod. base / articulo", r.get("Cód. base / artículo", r.get("cod_base", "")))
         desc_base = r.get("Desc. Base / Articulo", r.get("Desc. Base / ArtÃ­culo", r.get("desc_base", "")))
         sinonimo = r.get("Sinonimo", r.get("SinÃ³nimo", r.get("sinonimo", "")))
-        try:
-            factor_num = float(factor_val) if factor_val is not None else 0.0
-        except Exception:
-            factor_num = 0.0
-        try:
-            cant_erp_num = float(cant_erp_val) if cant_erp_val is not None else None
-        except Exception:
-            cant_erp_num = None
-        if cant_erp_num is None and factor_num:
-            try:
-                cant_erp_num = float(cant_val) * factor_num
-            except Exception:
-                cant_erp_num = None
+        factor_num = _to_float(factor_val) or 0.0
+        cant_val_num = _to_float(cant_val) or 0.0
+        cant_erp_num = _to_float(cant_erp_val)
+        if (cant_erp_num is None or cant_erp_num == 0) and factor_num:
+            cant_erp_num = cant_val_num * factor_num
         normalized.append({
             "cod_articulo": str(cod_art) if cod_art else "",
             "descripcion": str(r.get("Descripcion", r.get("DescripciÃ³n", r.get("descripcion", "")))),
@@ -160,7 +176,7 @@ def normalize_ventas_columns(records: List[dict]) -> List[dict]:
             "sucursal": str(r.get("Desc. sucursal", r.get("sucursal", ""))),
             "nro_sucursal": r.get("Nro. Sucursal", r.get("nro_sucursal", 0)),
             "fecha": str(r.get("Fecha", r.get("fecha", ""))),
-            "cantidad_venta": float(cant_val) if cant_val is not None else 0.0,
+            "cantidad_venta": cant_val_num,
             "cantidad_venta_erp": float(cant_erp_num) if cant_erp_num is not None else 0.0,
             "can_equi_v": float(factor_num) if factor_num else 0.0,
             "importe": float(imp_val) if imp_val is not None else 0.0,

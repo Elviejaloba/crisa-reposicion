@@ -69,7 +69,7 @@ API_URL = os.environ.get("SYNC_URL", "http://localhost:5000")
 # API_URL = "https://tu-api-remota.com"
 
 SYNC_INTERVAL = 3600  # 60 minutos entre sincronizaciones
-BATCH_SIZE = 500     # Lotes más chicos para evitar timeouts
+BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "500"))  # Lotes más chicos para evitar timeouts
 MAX_RETRIES = 3      # Reintentos por lote
 DB_MAX_RETRIES = int(os.environ.get("DB_MAX_RETRIES", "4"))
 DB_RETRY_BACKOFF = [2, 5, 10, 20]
@@ -403,9 +403,10 @@ def get_data():
         # ============================================================
         # SALDOS - Siempre actualizar (UPSERT)
         # ============================================================
-        print(f"\n  [SALDOS] Consultando stock actual...")
+        if _want("saldo"):
+            print(f"\n  [SALDOS] Consultando stock actual...")
         
-        query_saldo = """
+            query_saldo = """
             SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
             SET DATEFORMAT DMY
             SET DATEFIRST 7
@@ -440,49 +441,54 @@ def get_data():
             CTA_ARTICULO.STOCK = 1
             GROUP BY
                 CTA_ARTICULO.COD_CTA_ARTICULO, CTA_ARTICULO.DESC_CTA_ARTICULO, CTA_ARTICULO.SINONIMO, CTA_DEPOSITO.COD_CTA_DEPOSITO, SUCURSAL.NRO_SUCURSAL, SUCURSAL.DESC_SUCURSAL, CTA_DEPOSITO.DESC_CTA_DEPOSITO, (CASE CTA_ARTICULO.BASE when '' then CTA_ARTICULO.COD_ARTICULO ELSE CTA_ARTICULO.BASE end), (CASE CTA_ARTICULO.BASE when '' then CTA_ARTICULO.DESC_CTA_ARTICULO ELSE BASE.DESC_CTA_ARTICULO end), CTA_ARTICULO.ESCALA_1, STA33.DESC_VALOR, MEDIDA_STOCK.SIGLA_MEDIDA
-        """
+            """
 
-        df_saldo = read_sql_with_retry(query_saldo, conn, label="saldos")
-        print(f"    Obtenidos: {len(df_saldo)} registros")
-        df_saldo_full = df_saldo
-        df_saldo, _ = filtrar_incremental_local(
-            df_saldo_full,
-            ["Cod. Articulo", "Cod. Deposito", "Sucursal"],
-            SALDO_SNAPSHOT,
-            "saldos"
-        )
+            df_saldo = read_sql_with_retry(query_saldo, conn, label="saldos")
+            print(f"    Obtenidos: {len(df_saldo)} registros")
+            df_saldo_full = df_saldo
+            df_saldo, _ = filtrar_incremental_local(
+                df_saldo_full,
+                ["Cod. Articulo", "Cod. Deposito", "Sucursal"],
+                SALDO_SNAPSHOT,
+                "saldos"
+            )
+        else:
+            df_saldo = pd.DataFrame()
+            df_saldo_full = df_saldo
 
         # ============================================================
-        # VENTAS - INCREMENTAL: Solo desde última fecha o 7 días atrás
-        ventas_desde_override = os.environ.get("VENTAS_DESDE", "").strip()
-        ventas_dias_override = os.environ.get("VENTAS_DIAS", "").strip()
-        if ventas_desde_override:
-            fecha_desde = ventas_desde_override
-            print(f"\n  [VENTAS] Override desde {fecha_desde}")
-        elif ventas_dias_override:
-            try:
-                dias_override = int(ventas_dias_override)
-            except Exception:
-                dias_override = 120
-            fecha_desde = (datetime.now() - timedelta(days=dias_override)).strftime("%d/%m/%Y")
-            print(f"\n  [VENTAS] Override ?ltimos {dias_override} d?as desde {fecha_desde}")
-        elif ultima_fecha_ventas and total_ventas_existentes > 0:
-            # Restar 3 d?as para capturar modificaciones recientes
-            fecha_desde = (datetime.strptime(ultima_fecha_ventas, "%Y-%m-%d") - timedelta(days=3)).strftime("%d/%m/%Y")
-            print(f"\n  [VENTAS] Modo incremental desde {fecha_desde}")
-        else:
-            # Si no hay hist?rico, traer solo ventana reciente (no fija 2024)
-            fecha_desde = (datetime.now() - timedelta(days=120)).strftime("%d/%m/%Y")
-            print(f"\n  [VENTAS] Sin hist?rico: ventana reciente desde {fecha_desde}")
-        fecha_hasta = datetime.now().strftime("%d/%m/%Y")
+        # ============================================================
+        # VENTAS - INCREMENTAL: Solo desde ultima fecha o 7 dias atras
+        if _want("ventas"):
+            ventas_desde_override = os.environ.get("VENTAS_DESDE", "").strip()
+            ventas_dias_override = os.environ.get("VENTAS_DIAS", "").strip()
+            if ventas_desde_override:
+                fecha_desde = ventas_desde_override
+                print(f"\n  [VENTAS] Override desde {fecha_desde}")
+            elif ventas_dias_override:
+                try:
+                    dias_override = int(ventas_dias_override)
+                except Exception:
+                    dias_override = 120
+                fecha_desde = (datetime.now() - timedelta(days=dias_override)).strftime("%d/%m/%Y")
+                print(f"\n  [VENTAS] Override ultimos {dias_override} dias desde {fecha_desde}")
+            elif ultima_fecha_ventas and total_ventas_existentes > 0:
+                # Restar 3 dias para capturar modificaciones recientes
+                fecha_desde = (datetime.strptime(ultima_fecha_ventas, "%Y-%m-%d") - timedelta(days=3)).strftime("%d/%m/%Y")
+                print(f"\n  [VENTAS] Modo incremental desde {fecha_desde}")
+            else:
+                # Si no hay historico, traer solo ventana reciente (no fija 2024)
+                fecha_desde = (datetime.now() - timedelta(days=120)).strftime("%d/%m/%Y")
+                print(f"\n  [VENTAS] Sin historico: ventana reciente desde {fecha_desde}")
+            fecha_hasta = datetime.now().strftime("%d/%m/%Y")
 
-        query_ventas = f"""
-            SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
-            SET DATEFORMAT DMY
-            SET DATEFIRST 7
-            SET LOCK_TIMEOUT 30000;
-            SET DEADLOCK_PRIORITY LOW;
-            SELECT
+            query_ventas = f"""
+                SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+                SET DATEFORMAT DMY
+                SET DATEFIRST 7
+                SET LOCK_TIMEOUT 30000;
+                SET DEADLOCK_PRIORITY LOW;
+                SELECT
                 CTA03.FECHA_MOV AS [Fecha] ,
                 CTA02.NRO_SUCURS AS [Nro. Sucursal] ,
                 SUCURSAL.DESC_SUCURSAL AS [Desc. sucursal] ,
@@ -499,26 +505,26 @@ def get_data():
                 MAX(CASE WHEN CAN_EQUI_V = 0 THEN 1 ELSE CAN_EQUI_V END) AS [Factor Equiv] ,
                 MEDIDA_STOCK.SIGLA_MEDIDA AS [U.M. stock] ,
                 SUM(CASE CTA03.TCOMP_IN_V WHEN 'CC' THEN (-1) ELSE (1) END *
-                    CASE 'BIMONCTE'
-                        WHEN 'BIMONCTE' THEN
-                            CASE CTA02.MON_CTE
-                                WHEN 1 THEN CTA03.IMP_NETO_P * (CASE WHEN CTA02.IMPORTE_IV = 0 THEN 1 ELSE (1 + (CTA03.PORC_IVA/100)) END)
-                                ELSE CTA03.IMP_NETO_P * (CASE WHEN CTA02.IMPORTE_IV = 0 THEN 1 ELSE (1 + (CTA03.PORC_IVA/100)) END) * CTA02.COTIZ
-                            END
-                        WHEN 'BIORIGEN' THEN
-                            CASE CTA02.MON_CTE
-                                WHEN 1 THEN CASE CTA02.COTIZ WHEN 0 THEN 0 ELSE CTA03.IMP_NETO_P * (CASE WHEN CTA02.IMPORTE_IV = 0 THEN 1 ELSE (1 + (CTA03.PORC_IVA/100)) END) / CTA02.COTIZ END
-                                ELSE CTA03.IMP_NETO_P * (CASE WHEN CTA02.IMPORTE_IV = 0 THEN 1 ELSE (1 + (CTA03.PORC_IVA/100)) END)
-                            END
-                        WHEN 'BICOTIZ' THEN
-                            CASE 1 WHEN 0 THEN 0 ELSE
-                                CASE CTA02.MON_CTE
-                                    WHEN 1 THEN CTA03.IMP_NETO_P * (CASE WHEN CTA02.IMPORTE_IV = 0 THEN 1 ELSE (1 + (CTA03.PORC_IVA/100)) END) / 1
-                                    ELSE CTA03.IMP_NETO_P * (CASE WHEN CTA02.IMPORTE_IV = 0 THEN 1 ELSE (1 + (CTA03.PORC_IVA/100)) END) * CTA02.COTIZ / 1
-                                END
-                            END
-                    END) AS [Imp. prop. c/IVA]
-            FROM
+                CASE 'BIMONCTE'
+                WHEN 'BIMONCTE' THEN
+                CASE CTA02.MON_CTE
+                WHEN 1 THEN CTA03.IMP_NETO_P * (CASE WHEN CTA02.IMPORTE_IV = 0 THEN 1 ELSE (1 + (CTA03.PORC_IVA/100)) END)
+                ELSE CTA03.IMP_NETO_P * (CASE WHEN CTA02.IMPORTE_IV = 0 THEN 1 ELSE (1 + (CTA03.PORC_IVA/100)) END) * CTA02.COTIZ
+                END
+                WHEN 'BIORIGEN' THEN
+                CASE CTA02.MON_CTE
+                WHEN 1 THEN CASE CTA02.COTIZ WHEN 0 THEN 0 ELSE CTA03.IMP_NETO_P * (CASE WHEN CTA02.IMPORTE_IV = 0 THEN 1 ELSE (1 + (CTA03.PORC_IVA/100)) END) / CTA02.COTIZ END
+                ELSE CTA03.IMP_NETO_P * (CASE WHEN CTA02.IMPORTE_IV = 0 THEN 1 ELSE (1 + (CTA03.PORC_IVA/100)) END)
+                END
+                WHEN 'BICOTIZ' THEN
+                CASE 1 WHEN 0 THEN 0 ELSE
+                CASE CTA02.MON_CTE
+                WHEN 1 THEN CTA03.IMP_NETO_P * (CASE WHEN CTA02.IMPORTE_IV = 0 THEN 1 ELSE (1 + (CTA03.PORC_IVA/100)) END) / 1
+                ELSE CTA03.IMP_NETO_P * (CASE WHEN CTA02.IMPORTE_IV = 0 THEN 1 ELSE (1 + (CTA03.PORC_IVA/100)) END) * CTA02.COTIZ / 1
+                END
+                END
+                END) AS [Imp. prop. c/IVA]
+                FROM
                 CTA03 (NOLOCK)
                 INNER JOIN CTA02 (NOLOCK) ON (CTA02.N_COMP = CTA03.N_COMP AND CTA02.T_COMP = CTA03.T_COMP AND CTA03.NRO_SUCURS = CTA02.NRO_SUCURS)
                 INNER JOIN SUCURSAL (NOLOCK) ON CTA02.NRO_SUCURS = SUCURSAL.NRO_SUCURSAL
@@ -527,37 +533,41 @@ def get_data():
                 LEFT JOIN STA29 FAMILIA_ART (NOLOCK) ON SUBSTRING(CTA_ARTICULO.COD_ARTICULO, 1, LONG_FAM_A) = FAMILIA_ART.COD_AGR
                 LEFT JOIN (SELECT COD_ARTICULO, DESC_CTA_ARTICULO FROM CTA_ARTICULO WHERE USA_ESC = 'B') AS BASE ON (BASE.COD_ARTICULO = CTA_ARTICULO.BASE)
                 LEFT JOIN (SELECT * FROM CTA_MEDIDA) AS MEDIDA_STOCK ON CTA03.ID_MEDIDA_STOCK = MEDIDA_STOCK.ID_CTA_MEDIDA
-            WHERE
+                WHERE
                 CTA03.Cod_Articu NOT IN ('Art. Ajuste')
                 AND (CTA03.Cod_Articu <> '')
                 AND CTA02.T_COMP <> 'REC'
                 AND (CTA03.FECHA_MOV BETWEEN '{fecha_desde}' AND '{fecha_hasta}')
                 AND ((ISNULL(CTA03.RENGL_PADR,0) = 0) OR (ISNULL(CTA03.INSUMO_KIT_SEPARADO,0) = 1))
-            GROUP BY
+                GROUP BY
                 CTA03.FECHA_MOV, CTA02.NRO_SUCURS, SUCURSAL.DESC_SUCURSAL, CTA02.T_COMP, CTA03.Cod_Articu, CTA_ARTICULO.DESC_CTA_ARTICULO, CTA_ARTICULO.SINONIMO,
                 (CASE CTA_ARTICULO.BASE when '' then CTA_ARTICULO.COD_ARTICULO ELSE CTA_ARTICULO.BASE end),
                 (CASE CTA_ARTICULO.BASE when '' then CTA_ARTICULO.DESC_CTA_ARTICULO ELSE BASE.DESC_CTA_ARTICULO end),
                 ISNULL(FAMILIA_ART.COD_AGR,''), FAMILIA_ART.NOM_AGR, MEDIDA_STOCK.SIGLA_MEDIDA
-        """
+            """
 
-        df_ventas = read_sql_with_retry(query_ventas, conn, label="ventas")
-        print(f"    Obtenidos: {len(df_ventas)} registros")
+            df_ventas = read_sql_with_retry(query_ventas, conn, label="ventas")
+            print(f"    Obtenidos: {len(df_ventas)} registros")
 
-        if not df_ventas.empty:
-            df_ventas["Unidad Normalizada"] = df_ventas["U.M. stock"].apply(normalizar_unidad)
-            df_ventas["Rubro Macro"] = df_ventas["Cod. Familia (Articulo)"].apply(rubro_macro)
-            df_ventas["Categoria UNM"] = df_ventas.apply(
-                lambda r: categoria_unm(r.get("Unidad Normalizada"), r.get("Cantidad venta")), axis=1
-            )
-            df_ventas["Tipo de Venta"] = df_ventas.apply(
-                lambda r: tipo_venta(r.get("Desc. sucursal"), r.get("Tipo de comprobante") or r.get("Tipo de comprobante", "")),
-                axis=1
-            )
-            df_ventas["Sub Rubro"] = df_ventas.apply(
-                lambda r: sub_rubro(r.get("Cod. Articulo"), r.get("Descripcion")), axis=1
-            )
+            if not df_ventas.empty:
+                for col in ("Cod. Articulo", "Desc. sucursal", "Cod. base / articulo"):
+                    if col in df_ventas.columns:
+                        df_ventas[col] = df_ventas[col].fillna("").astype(str).str.strip()
+                df_ventas["Unidad Normalizada"] = df_ventas["U.M. stock"].apply(normalizar_unidad)
+                df_ventas["Rubro Macro"] = df_ventas["Cod. Familia (Articulo)"].apply(rubro_macro)
+                df_ventas["Categoria UNM"] = df_ventas.apply(
+                    lambda r: categoria_unm(r.get("Unidad Normalizada"), r.get("Cantidad venta")), axis=1
+                )
+                df_ventas["Tipo de Venta"] = df_ventas.apply(
+                    lambda r: tipo_venta(r.get("Desc. sucursal"), r.get("Tipo de comprobante") or r.get("Tipo de comprobante", "")),
+                    axis=1
+                )
+                df_ventas["Sub Rubro"] = df_ventas.apply(
+                    lambda r: sub_rubro(r.get("Cod. Articulo"), r.get("Descripcion")), axis=1
+                )
 
-        # ============================================================
+        else:
+            df_ventas = pd.DataFrame()
         # PRECIOS - Siempre actualizar (UPSERT)
         # ============================================================
         print(f"\n  [PRECIOS] Consultando listas 2 y 102...")
