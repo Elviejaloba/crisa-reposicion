@@ -1009,9 +1009,7 @@ button {
 
 .matrix {
   border-collapse: collapse;
-  width: max-content;
-  min-width: 100%;
-  display: inline-table;
+  width: 100%;
   table-layout: auto;
   background: white;
 }
