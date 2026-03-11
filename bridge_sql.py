@@ -80,6 +80,12 @@ SYNC_HORARIO_FIN = dt_time(21, 0)     # Hasta las 21:00
 SYNC_DIAS_HABILITADOS = {0, 1, 2, 3, 4, 5}  # 0=Lun ... 5=Sab
 SYNC_SOLO_EN_HORARIO = True  # True = solo sync dentro del horario y días definidos
 
+SYNC_ONLY = os.environ.get("SYNC_ONLY", "").strip().lower()
+_SYNC_ONLY_SET = {s.strip() for s in SYNC_ONLY.split(",") if s.strip()}
+
+def _want(section: str) -> bool:
+    return not _SYNC_ONLY_SET or section in _SYNC_ONLY_SET
+
 CACHE_DIR = os.path.join(os.path.dirname(__file__), "bridge_cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
 SALDO_SNAPSHOT = os.path.join(CACHE_DIR, "saldo_snapshot.pkl")
@@ -688,6 +694,17 @@ def get_data():
         conn.close()
 
         # ============================================================
+        if not _want("saldo"):
+            df_saldo = pd.DataFrame()
+            df_saldo_full = df_saldo
+        if not _want("articulos"):
+            df_articulos = pd.DataFrame()
+        if not _want("precios"):
+            df_precios = pd.DataFrame()
+        if not _want("costos"):
+            df_costos = pd.DataFrame()
+        if not _want("ventas"):
+            df_ventas = pd.DataFrame()
         # ENVIAR EN LOTES
         # ============================================================
         print(f"\n  Enviando datos al API ({API_URL})...")
