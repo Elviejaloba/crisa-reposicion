@@ -845,11 +845,26 @@ export default function App() {
       const esc = (window as any).CSS?.escape ? (window as any).CSS.escape(key) : key.replace(/"/g, '\\"')
       return table.querySelector(`th[data-col="${esc}"]`) as HTMLTableCellElement | null
     }
+    const measureColumn = (selector: string, limit = 20) => {
+      const cells = Array.from(table.querySelectorAll(selector)) as HTMLElement[]
+      let max = 0
+      for (let i = 0; i < cells.length && i < limit; i += 1) {
+        const w = cells[i].scrollWidth
+        if (w > max) max = w
+      }
+      return max
+    }
     const update = () => {
       const base = getHeader(BASE_KEY)
       const stock = getHeader('Stock CDD')
-      if (base) table.style.setProperty('--col-base', `${base.offsetWidth}px`)
-      if (stock) table.style.setProperty('--col-stock', `${stock.offsetWidth}px`)
+      if (base) {
+        const baseWidth = Math.max(base.scrollWidth, measureColumn('td.col-base'))
+        table.style.setProperty('--col-base', `${Math.max(90, Math.ceil(baseWidth))}px`)
+      }
+      if (stock) {
+        const stockWidth = Math.max(stock.scrollWidth, measureColumn('td.col-stock'))
+        table.style.setProperty('--col-stock', `${Math.max(90, Math.ceil(stockWidth))}px`)
+      }
     }
     update()
     const raf1 = requestAnimationFrame(update)
