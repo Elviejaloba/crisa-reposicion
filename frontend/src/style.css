@@ -1014,6 +1014,7 @@ button {
   background: white;
 }
 
+
 .matrix thead th {
   position: sticky;
   top: 0;
@@ -1562,6 +1563,14 @@ button {
   .matrix thead th {
     font-size: 10px;
     letter-spacing: 0.03em;
+  }
+  .matrix.auto-fit {
+    table-layout: fixed;
+  }
+  .matrix.auto-fit th,
+  .matrix.auto-fit td {
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }
 

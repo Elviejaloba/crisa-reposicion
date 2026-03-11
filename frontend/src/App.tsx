@@ -827,6 +827,9 @@ export default function App() {
     return totalRow ? [...data, totalRow] : data
   }, [displayRows, sortCol, sortDesc])
 
+  const isMatrixAutoFit = displayColumns.length > 0 && displayColumns.length <= 6
+  const isSugerenciaAutoFit = sugerenciaColumns.length > 0 && sugerenciaColumns.length <= 6
+
   const visibleRows = useMemo(() => {
     if (!sortedRows.length) return sortedRows
     const totalRow = sortedRows.find((r) => String(r[BASE_KEY] || '').toLowerCase() === 'total')
@@ -1251,7 +1254,7 @@ export default function App() {
             ) : matrix.columns.length === 0 ? (
               <div className="empty">Sin datos para mostrar con los filtros seleccionados.</div>
             ) : (
-              <table className="matrix matrix-need" ref={matrixRef} key={displayColumns.join('|')}>
+              <table className={`matrix matrix-need ${isMatrixAutoFit ? 'auto-fit' : ''}`} ref={matrixRef} key={displayColumns.join('|')}>
                 <thead>
                   <tr>
                     {displayColumns.map((c, idx) => {
@@ -1412,7 +1415,7 @@ export default function App() {
             ) : sugerencia.rows.length === 0 ? (
               <div className="empty">Sin sugerencias para el periodo seleccionado.</div>
             ) : (
-              <table className="matrix matrix-sug" key={sugerenciaColumns.join('|')}>
+              <table className={`matrix matrix-sug ${isSugerenciaAutoFit ? 'auto-fit' : ''}`} key={sugerenciaColumns.join('|')}>
                 <thead>
                   <tr>
                     {sugerenciaColumns.map((c) => {
