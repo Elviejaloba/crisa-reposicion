@@ -1512,9 +1512,9 @@ export default function App() {
               <div>
                 <h3>Ranking alertas criticas</h3>
                 <p>Quiebre de stock, Stock de Seguridad y Pto de Pedido.</p>
+                <div className="kpi-ranking-total">Monto a reponer (costo reposición): {formatMoney(kpiRankingTotal)}</div>
               </div>
               <div className="kpi-ranking-actions">
-                <div className="kpi-ranking-total">Monto a reponer (costo reposición): {formatMoney(kpiRankingTotal)}</div>
                 <button className="focus-btn" type="button" onClick={() => setKpiFocusPanel('ranking')}>Modo enfoque</button>
               </div>
             </div>

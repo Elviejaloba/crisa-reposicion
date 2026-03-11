@@ -1364,7 +1364,8 @@ button {
   color: #0f172a;
   white-space: nowrap;
   font-size: 13px;
-  margin-left: 12px;
+  margin-top: 6px;
+  margin-left: 0;
   padding: 4px 8px;
   border-radius: 999px;
   background: #f8fafc;
