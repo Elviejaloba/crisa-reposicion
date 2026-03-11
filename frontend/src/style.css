@@ -183,7 +183,8 @@ button {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 12px;
+  gap: 10px;
+  width: 100%;
 }
 
 .filters-title {
@@ -201,7 +202,21 @@ button {
   font-size: 12px;
   color: #334155;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.filters-toggle::after {
+  content: '▾';
+  font-size: 11px;
+  color: #64748b;
+  transition: transform 0.2s ease;
+}
+
+.filters[data-open="true"] .filters-toggle::after {
+  transform: rotate(180deg);
 }
 
 .filters-toggle:hover {
@@ -223,7 +238,8 @@ button {
   max-height: 1400px;
   opacity: 1;
   transform: translateY(0);
-  transition: max-height 0.28s ease, opacity 0.2s ease, transform 0.2s ease;
+  transition: max-height 0.32s ease, opacity 0.2s ease, transform 0.2s ease;
+  will-change: max-height, opacity, transform;
 }
 
 .filters[data-open="false"] .filters-body {
@@ -231,6 +247,10 @@ button {
   opacity: 0;
   transform: translateY(-6px);
   pointer-events: none;
+}
+
+.filters[data-open="false"] {
+  padding-bottom: 12px;
 }
 
 .filter-grid {
@@ -1531,54 +1551,65 @@ button {
 
 @media (max-width: 640px) {
   .page {
-    padding: 20px 14px 32px;
+    padding: 16px 12px 28px;
   }
   .header {
-    gap: 16px;
-    padding: 14px 16px;
-    border-radius: 16px;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
   }
   .logo img {
-    height: 40px;
+    height: 34px;
   }
   .title h1 {
-    font-size: 22px;
+    font-size: 20px;
   }
   .title p {
-    font-size: 12px;
+    font-size: 11px;
   }
   .sync {
     width: 100%;
     align-items: flex-start;
-    padding: 8px 10px;
+    padding: 6px 8px;
     min-width: 0;
   }
   .sync-time {
-    font-size: 13px;
+    font-size: 12px;
     text-align: left;
   }
   .sync-label,
   .sync-next {
-    font-size: 10px;
+    font-size: 9px;
   }
   .filter-grid,
   .filter-row {
     gap: 12px;
   }
   .filters {
-    padding: 14px;
-    border-radius: 16px;
+    padding: 12px;
+    border-radius: 14px;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
   }
   .filters-head {
-    flex-wrap: wrap;
-    gap: 8px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
   }
   .filters-title {
     font-size: 12px;
   }
   .filters-toggle {
-    padding: 4px 10px;
+    padding: 6px 12px;
     font-size: 11px;
+    align-self: flex-start;
+  }
+  .filters-body {
+    gap: 14px;
+  }
+  .active-filters {
+    flex-direction: column;
+    align-items: flex-start;
   }
   .chip-row {
     gap: 6px;
@@ -1651,7 +1682,7 @@ button {
   }
   .matrix-wrap,
   .table-wrap {
-    max-height: 55vh;
+    max-height: 50vh;
     border-radius: 12px;
   }
   .matrix thead th {
