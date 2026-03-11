@@ -852,6 +852,8 @@ export default function App() {
       if (stock) table.style.setProperty('--col-stock', `${stock.offsetWidth}px`)
     }
     update()
+    const raf1 = requestAnimationFrame(update)
+    const raf2 = requestAnimationFrame(update)
     let ro: ResizeObserver | null = null
     if ('ResizeObserver' in window) {
       ro = new ResizeObserver(() => update())
@@ -861,8 +863,10 @@ export default function App() {
     return () => {
       ro?.disconnect()
       window.removeEventListener('resize', update)
+      cancelAnimationFrame(raf1)
+      cancelAnimationFrame(raf2)
     }
-  }, [displayColumns, visibleRows.length])
+  }, [matrix, displayColumns, visibleRows.length])
 
   useEffect(() => {
     if (tab !== 'distribucion') return
