@@ -262,7 +262,6 @@ export default function App() {
   const [rowLimit, setRowLimit] = useState<number>(200)
   const [soloNuevos, setSoloNuevos] = useState<boolean>(false)
   const [filtersOpen, setFiltersOpen] = useState<boolean>(true)
-  const [filtersLocked, setFiltersLocked] = useState<boolean>(false)
   const matrixRef = useRef<HTMLTableElement | null>(null)
 
   const nuestrasDisponibles = useMemo(
@@ -342,9 +341,6 @@ export default function App() {
     const apply = () => {
       if (mq.matches) {
         setFiltersOpen(true)
-        setFiltersLocked(true)
-      } else {
-        setFiltersLocked(false)
       }
     }
     apply()
@@ -1006,11 +1002,10 @@ export default function App() {
             type="button"
             className="filters-toggle"
             onClick={() => {
-              if (!filtersLocked) setFiltersOpen((open) => !open)
+              setFiltersOpen((open) => !open)
             }}
             aria-expanded={filtersOpen}
             aria-controls="filters-body"
-            disabled={filtersLocked}
           >
             {filtersOpen ? 'Ocultar filtros' : 'Mostrar filtros'}
           </button>

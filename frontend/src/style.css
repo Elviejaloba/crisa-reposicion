@@ -1527,35 +1527,58 @@ button {
     font-size: 10px;
     letter-spacing: 0.03em;
   }
-  .filters-toggle {
-    display: none;
-  }
 }
 
 @media (max-width: 640px) {
+  .page {
+    padding: 20px 14px 32px;
+  }
   .header {
     gap: 16px;
+    padding: 14px 16px;
+    border-radius: 16px;
   }
   .logo img {
-    height: 44px;
+    height: 40px;
   }
   .title h1 {
-    font-size: 24px;
+    font-size: 22px;
+  }
+  .title p {
+    font-size: 12px;
   }
   .sync {
     width: 100%;
     align-items: flex-start;
+    padding: 8px 10px;
+    min-width: 0;
+  }
+  .sync-time {
+    font-size: 13px;
+    text-align: left;
+  }
+  .sync-label,
+  .sync-next {
+    font-size: 10px;
   }
   .filter-grid,
   .filter-row {
     gap: 12px;
   }
   .filters {
-    padding: 16px;
+    padding: 14px;
     border-radius: 16px;
+  }
+  .filters-head {
+    flex-wrap: wrap;
+    gap: 8px;
   }
   .filters-title {
     font-size: 12px;
+  }
+  .filters-toggle {
+    padding: 4px 10px;
+    font-size: 11px;
   }
   .multi {
     max-width: 100%;
