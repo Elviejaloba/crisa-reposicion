@@ -263,6 +263,8 @@ export default function App() {
   const [soloNuevos, setSoloNuevos] = useState<boolean>(false)
   const [filtersOpen, setFiltersOpen] = useState<boolean>(true)
   const matrixRef = useRef<HTMLTableElement | null>(null)
+  const matrixWrapRef = useRef<HTMLDivElement | null>(null)
+  const sugerenciaWrapRef = useRef<HTMLDivElement | null>(null)
 
   const nuestrasDisponibles = useMemo(
     () => SUC_NUESTRAS.filter((s) => sucursales.includes(s)),
@@ -859,6 +861,24 @@ export default function App() {
     }
   }, [displayColumns, visibleRows.length])
 
+  useEffect(() => {
+    if (tab !== 'distribucion') return
+    const wrap = matrixWrapRef.current
+    if (wrap) {
+      wrap.scrollLeft = 0
+      wrap.scrollTop = 0
+    }
+  }, [tab, selSuc, selFamilias, selAlertas, codigo, dias, temporada, soloNuevos, rowLimit, displayColumns.length, sortedRows.length])
+
+  useEffect(() => {
+    if (tab !== 'sugerencia') return
+    const wrap = sugerenciaWrapRef.current
+    if (wrap) {
+      wrap.scrollLeft = 0
+      wrap.scrollTop = 0
+    }
+  }, [tab, selSuc, selFamilias, selAlertas, codigo, dias, temporada, soloNuevos, sugRowLimit, sugOnlyPositive, sugerenciaColumns.length, sugerenciaSortedRows.length])
+
   const kpiChart = useMemo(() => {
     const rows = [...kpi]
     return rows.map((r) => ({
@@ -1220,7 +1240,7 @@ export default function App() {
             </div>
           </div>
 
-          <div className="matrix-wrap">
+          <div className="matrix-wrap" ref={matrixWrapRef}>
             {matrixLoading ? (
               <div className="overlay-loading">
                 <div className="spinner"></div>
@@ -1231,7 +1251,7 @@ export default function App() {
             ) : matrix.columns.length === 0 ? (
               <div className="empty">Sin datos para mostrar con los filtros seleccionados.</div>
             ) : (
-              <table className="matrix matrix-need" ref={matrixRef}>
+              <table className="matrix matrix-need" ref={matrixRef} key={displayColumns.join('|')}>
                 <thead>
                   <tr>
                     {displayColumns.map((c, idx) => {
@@ -1381,7 +1401,7 @@ export default function App() {
               </div>
             </div>
           </div>
-          <div className="table-wrap">
+          <div className="table-wrap" ref={sugerenciaWrapRef}>
             {sugerenciaLoading ? (
               <div className="overlay-loading">
                 <div className="spinner"></div>
@@ -1392,7 +1412,7 @@ export default function App() {
             ) : sugerencia.rows.length === 0 ? (
               <div className="empty">Sin sugerencias para el periodo seleccionado.</div>
             ) : (
-              <table className="matrix matrix-sug">
+              <table className="matrix matrix-sug" key={sugerenciaColumns.join('|')}>
                 <thead>
                   <tr>
                     {sugerenciaColumns.map((c) => {

@@ -842,12 +842,22 @@ button {
   font-weight: 600;
   color: #334155;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .quick-chip.on {
   border-color: #38bdf8;
   background: #e0f2fe;
   color: #0f172a;
+}
+
+.quick-chip.on::after {
+  content: '×';
+  font-size: 12px;
+  font-weight: 700;
+  color: #0284c7;
 }
 
 .sort-box {
@@ -1000,6 +1010,7 @@ button {
 .matrix {
   border-collapse: collapse;
   width: max-content;
+  min-width: 100%;
   display: inline-table;
   table-layout: auto;
   background: white;
