@@ -31,8 +31,7 @@ conn_str = (
     "Database=crisa_real1;"
     "UID=Axoft;"
     "PWD=Axoft;"
-    "Encrypt=yes;"
-    "TrustServerCertificate=yes;"
+    "Encrypt=no;"
 )
 
 # ==============================================================
