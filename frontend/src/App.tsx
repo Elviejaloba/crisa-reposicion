@@ -261,6 +261,8 @@ export default function App() {
   const [logoOk, setLogoOk] = useState<boolean>(true)
   const [rowLimit, setRowLimit] = useState<number>(200)
   const [soloNuevos, setSoloNuevos] = useState<boolean>(false)
+  const [filtersOpen, setFiltersOpen] = useState<boolean>(true)
+  const [filtersLocked, setFiltersLocked] = useState<boolean>(false)
   const matrixRef = useRef<HTMLTableElement | null>(null)
 
   const nuestrasDisponibles = useMemo(
@@ -333,6 +335,28 @@ export default function App() {
     start.setDate(end.getDate() - Math.max(dias - 1, 0))
     return `${fmt(start)} - ${fmt(end)}`
   }, [dias, temporada])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mq = window.matchMedia('(max-width: 900px)')
+    const apply = () => {
+      if (mq.matches) {
+        setFiltersOpen(true)
+        setFiltersLocked(true)
+      } else {
+        setFiltersLocked(false)
+      }
+    }
+    apply()
+    if ('addEventListener' in mq) {
+      mq.addEventListener('change', apply)
+      return () => mq.removeEventListener('change', apply)
+    }
+    // Safari fallback
+    mq.addListener(apply)
+    return () => mq.removeListener(apply)
+  }, [])
+
   useEffect(() => {
     fetch(`${API_BASE}/sync-info`)
       .then((r) => r.json())
@@ -964,16 +988,36 @@ export default function App() {
         <div className="sync">
           <div className="sync-time">{formatSync(String(lastSyncLabel))}</div>
           <div className="sync-label">Última actualización</div>
+          <div className="sync-next">
+            <span className="sync-clock" aria-hidden="true"></span>
+            Próxima actualización: cada 60 min
+          </div>
         </div>
         <span className="version-badge">v{APP_VERSION}</span>
       </div>
 
-      <section className="filters">
-        <div className="filter-grid">
-          <MultiPicker
-            label="Selecciona sucursal"
-            emptyLabel="Todas"
-            allLabel="Todas"
+      <section className="filters" data-open={filtersOpen ? 'true' : 'false'}>
+        <div className="filters-head">
+          <div className="filters-title">Filtros</div>
+          <button
+            type="button"
+            className="filters-toggle"
+            onClick={() => {
+              if (!filtersLocked) setFiltersOpen((open) => !open)
+            }}
+            aria-expanded={filtersOpen}
+            aria-controls="filters-body"
+            disabled={filtersLocked}
+          >
+            {filtersOpen ? 'Ocultar filtros' : 'Mostrar filtros'}
+          </button>
+        </div>
+        <div className="filters-body" id="filters-body">
+          <div className="filter-grid">
+            <MultiPicker
+              label="Selecciona sucursal"
+              emptyLabel="Todas"
+              allLabel="Todas"
             searchPlaceholder="Buscar sucursal..."
             options={sucursales}
             value={selSuc}
@@ -1011,96 +1055,97 @@ export default function App() {
           />
         </div>
 
-        <div className="active-filters">
-          <div className="active-label">Filtros activos</div>
-          <div className="chip-row">
-            <span className="mini-pill">Sucursales: {summarizeList(selSuc, 'Todas')}</span>
-            <span className="mini-pill">Familias: {summarizeList(selFamilias, 'Todas')}</span>
-            <span className="mini-pill">Código: {codigo ? codigo : 'Todos'}</span>
-            <span className="mini-pill">Alertas: {selAlertas.length === 0 ? 'Ninguna' : selAlertas.length === ALERTAS.length ? 'Todas' : summarizeList(selAlertas, 'Todas')}</span>
-            <span className="mini-pill">Productos: {temporada ? (temporada === 'invierno' ? 'Invierno' : 'Verano') : 'Todas'}</span>
-            <span className="mini-pill">Artículos nuevos: {soloNuevos ? 'Sí' : 'No'}</span>
-            <span className="mini-pill">Días: {dias}</span>
-            <button type="button" className="mini-pill action" onClick={clearFilters}>Limpiar filtros</button>
-          </div>
-        </div>
-
-        <div className="filter-row">
-          <div className="field">
-            <label>Selecciona rango de días</label>
-            <div className="segmented">
-              {DIAS.map((d) => (
-                <button key={d} className={d === dias ? 'active' : ''} onClick={() => setDias(d)}>
-                  {d} días
-                </button>
-              ))}
-            </div>
-            <div className="season-row">
-              <div className="season-label">Productos por temporada (ventas)</div>
-              <div className="chip-row">
-                <button
-                  type="button"
-                  className={`chip info ${temporada === 'invierno' ? 'on' : ''}`}
-                  onClick={() => setTemporada(temporada === 'invierno' ? '' : 'invierno')}
-                >
-                  Productos de Invierno
-                </button>
-                <button
-                  type="button"
-                  className={`chip warning ${temporada === 'verano' ? 'on' : ''}`}
-                  onClick={() => setTemporada(temporada === 'verano' ? '' : 'verano')}
-                >
-                  Productos de Verano
-                </button>
-              </div>
-              {temporada ? (
-                <div className="season-range">Periodo aplicado: {periodoVentas}</div>
-              ) : null}
-            </div>
-            <div className="season-row">
-              <div className="season-label">Artículos nuevos</div>
-              <div className="chip-row">
-                <button
-                  type="button"
-                  className={`chip new ${soloNuevos ? 'on' : ''}`}
-                  onClick={() => setSoloNuevos((v) => !v)}
-                  title="Fecha de alta dentro de los últimos 6 meses"
-                >
-                  Artículos nuevos
-                </button>
-              </div>
-            </div>
-          </div>
-          <div className="field">
-            <label>Selecciona punto de pedido</label>
-            <div className="chip-actions">
-              <button type="button" onClick={() => setSelAlertas(ALERTAS.map((a) => a.value))}>Todas</button>
-              <button
-                type="button"
-                onClick={() => setSelAlertas([
-                  'Quiebre de stock',
-                  'Stock de Seguridad',
-                  'Pto de Pedido',
-                ])}
-              >
-                Críticas
-              </button>
-              <button type="button" onClick={() => setSelAlertas([])}>Limpiar</button>
-            </div>
+          <div className="active-filters">
+            <div className="active-label">Filtros activos</div>
             <div className="chip-row">
-              {ALERTAS.map((a) => (
+              <span className="mini-pill">Sucursales: {summarizeList(selSuc, 'Todas')}</span>
+              <span className="mini-pill">Familias: {summarizeList(selFamilias, 'Todas')}</span>
+              <span className="mini-pill">Código: {codigo ? codigo : 'Todos'}</span>
+              <span className="mini-pill">Alertas: {selAlertas.length === 0 ? 'Ninguna' : selAlertas.length === ALERTAS.length ? 'Todas' : summarizeList(selAlertas, 'Todas')}</span>
+              <span className="mini-pill">Productos: {temporada ? (temporada === 'invierno' ? 'Invierno' : 'Verano') : 'Todas'}</span>
+              <span className="mini-pill">Artículos nuevos: {soloNuevos ? 'Sí' : 'No'}</span>
+              <span className="mini-pill">Días: {dias}</span>
+              <button type="button" className="mini-pill action" onClick={clearFilters}>Limpiar filtros</button>
+            </div>
+          </div>
+
+          <div className="filter-row">
+            <div className="field">
+              <label>Selecciona rango de días</label>
+              <div className="segmented">
+                {DIAS.map((d) => (
+                  <button key={d} className={d === dias ? 'active' : ''} onClick={() => setDias(d)}>
+                    {d} días
+                  </button>
+                ))}
+              </div>
+              <div className="season-row">
+                <div className="season-label">Productos por temporada (ventas)</div>
+                <div className="chip-row">
+                  <button
+                    type="button"
+                    className={`chip info ${temporada === 'invierno' ? 'on' : ''}`}
+                    onClick={() => setTemporada(temporada === 'invierno' ? '' : 'invierno')}
+                  >
+                    Productos de Invierno
+                  </button>
+                  <button
+                    type="button"
+                    className={`chip warning ${temporada === 'verano' ? 'on' : ''}`}
+                    onClick={() => setTemporada(temporada === 'verano' ? '' : 'verano')}
+                  >
+                    Productos de Verano
+                  </button>
+                </div>
+                {temporada ? (
+                  <div className="season-range">Periodo aplicado: {periodoVentas}</div>
+                ) : null}
+              </div>
+              <div className="season-row">
+                <div className="season-label">Artículos nuevos</div>
+                <div className="chip-row">
+                  <button
+                    type="button"
+                    className={`chip new ${soloNuevos ? 'on' : ''}`}
+                    onClick={() => setSoloNuevos((v) => !v)}
+                    title="Fecha de alta dentro de los últimos 6 meses"
+                  >
+                    Artículos nuevos
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="field">
+              <label>Selecciona punto de pedido</label>
+              <div className="chip-actions">
+                <button type="button" onClick={() => setSelAlertas(ALERTAS.map((a) => a.value))}>Todas</button>
                 <button
-                  key={a.value}
-                  className={`chip ${a.tone} ${selAlertas.includes(a.value) ? 'on' : ''}`}
-                  onClick={() => {
-                    setSelAlertas((prev) =>
-                      prev.includes(a.value) ? prev.filter((p) => p !== a.value) : [...prev, a.value]
-                    )
-                  }}
+                  type="button"
+                  onClick={() => setSelAlertas([
+                    'Quiebre de stock',
+                    'Stock de Seguridad',
+                    'Pto de Pedido',
+                  ])}
                 >
-                  {a.label}
+                  Críticas
                 </button>
-              ))}
+                <button type="button" onClick={() => setSelAlertas([])}>Limpiar</button>
+              </div>
+              <div className="chip-row">
+                {ALERTAS.map((a) => (
+                  <button
+                    key={a.value}
+                    className={`chip ${a.tone} ${selAlertas.includes(a.value) ? 'on' : ''}`}
+                    onClick={() => {
+                      setSelAlertas((prev) =>
+                        prev.includes(a.value) ? prev.filter((p) => p !== a.value) : [...prev, a.value]
+                      )
+                    }}
+                  >
+                    {a.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
