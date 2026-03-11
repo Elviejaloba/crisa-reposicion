@@ -195,7 +195,7 @@ const parseLocaleNumber = (value: unknown): number => {
 }
 
 const formatMes = (mes: number) =>
-  ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'][mes - 1] || ''
+  ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'][mes - 1] || ''
 
 const normalizeDateString = (value: string) => {
   const trimmed = value.trim()
@@ -863,7 +863,7 @@ export default function App() {
     const rows = [...kpi]
     return rows.map((r) => ({
       ...r,
-      mes: `${formatMes(r.mes_num)} ${String(r.anio).slice(-2)}`,
+      mes: `${formatMes(r.mes_num)} ${r.anio}`,
     }))
   }, [kpi])
 
