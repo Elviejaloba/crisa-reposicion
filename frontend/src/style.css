@@ -999,9 +999,8 @@ button {
 
 .matrix {
   border-collapse: collapse;
-  width: 100%;
-  min-width: 100%;
-  display: table;
+  width: max-content;
+  display: inline-table;
   table-layout: auto;
   background: white;
 }
