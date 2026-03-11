@@ -1231,7 +1231,7 @@ def get_sugerencia_distribucion(
                 cod_articulo,
                 {sucursal_case} AS sucursal,
                 SUM(cantidad_venta) AS ventas_periodo_stock,
-                SUM(COALESCE(cantidad_venta_erp, cantidad_venta)) AS ventas_periodo_erp
+                SUM(COALESCE(NULLIF(cantidad_venta_erp, 0), cantidad_venta)) AS ventas_periodo_erp
             FROM ventas
             WHERE fecha >= %s AND fecha <= %s
             GROUP BY 1,2
