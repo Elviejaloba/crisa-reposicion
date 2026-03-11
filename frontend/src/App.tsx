@@ -278,6 +278,9 @@ export default function App() {
   )
   const isSameSelection = (a: string[], b: string[]) =>
     a.length === b.length && a.every((v) => b.includes(v))
+  const toggleQuickSuc = (target: string[]) => {
+    setSelSuc((prev) => (isSameSelection(prev, target) ? [] : target))
+  }
 
   const summarizeList = (items: string[], emptyLabel: string, max = 2) => {
     if (!items.length) return emptyLabel
@@ -1174,21 +1177,21 @@ export default function App() {
                 <button
                   type="button"
                   className={`quick-chip ${isSameSelection(selSuc, nuestrasDisponibles) ? 'on' : ''}`}
-                  onClick={() => setSelSuc(nuestrasDisponibles)}
+                  onClick={() => toggleQuickSuc(nuestrasDisponibles)}
                 >
                   Sucursales Nuestras
                 </button>
                 <button
                   type="button"
                   className={`quick-chip ${isSameSelection(selSuc, franquiciasDisponibles) ? 'on' : ''}`}
-                  onClick={() => setSelSuc(franquiciasDisponibles)}
+                  onClick={() => toggleQuickSuc(franquiciasDisponibles)}
                 >
                   Franquicias
                 </button>
                 <button
                   type="button"
                   className={`quick-chip ${isSameSelection(selSuc, telasDisponibles) ? 'on' : ''}`}
-                  onClick={() => setSelSuc(telasDisponibles)}
+                  onClick={() => toggleQuickSuc(telasDisponibles)}
                 >
                   Crisa Telas
                 </button>
@@ -1315,21 +1318,21 @@ export default function App() {
                 <button
                   type="button"
                   className={`quick-chip ${isSameSelection(selSuc, nuestrasDisponibles) ? 'on' : ''}`}
-                  onClick={() => setSelSuc(nuestrasDisponibles)}
+                  onClick={() => toggleQuickSuc(nuestrasDisponibles)}
                 >
                   Sucursales Nuestras
                 </button>
                 <button
                   type="button"
                   className={`quick-chip ${isSameSelection(selSuc, franquiciasDisponibles) ? 'on' : ''}`}
-                  onClick={() => setSelSuc(franquiciasDisponibles)}
+                  onClick={() => toggleQuickSuc(franquiciasDisponibles)}
                 >
                   Franquicias
                 </button>
                 <button
                   type="button"
                   className={`quick-chip ${isSameSelection(selSuc, telasDisponibles) ? 'on' : ''}`}
-                  onClick={() => setSelSuc(telasDisponibles)}
+                  onClick={() => toggleQuickSuc(telasDisponibles)}
                 >
                   Crisa Telas
                 </button>
