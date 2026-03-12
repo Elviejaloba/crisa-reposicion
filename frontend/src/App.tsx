@@ -265,6 +265,8 @@ export default function App() {
   const matrixRef = useRef<HTMLTableElement | null>(null)
   const matrixWrapRef = useRef<HTMLDivElement | null>(null)
   const sugerenciaWrapRef = useRef<HTMLDivElement | null>(null)
+  const colBaseWidthRef = useRef<number>(0)
+  const colStockWidthRef = useRef<number>(0)
 
   const nuestrasDisponibles = useMemo(
     () => SUC_NUESTRAS.filter((s) => sucursales.includes(s)),
@@ -859,11 +861,17 @@ export default function App() {
       const stock = getHeader('Stock CDD')
       if (base) {
         const baseWidth = Math.max(base.scrollWidth, measureColumn('td.col-base'))
-        table.style.setProperty('--col-base', `${Math.max(90, Math.ceil(baseWidth))}px`)
+        const prev = colBaseWidthRef.current
+        const next = Math.max(prev, Math.max(90, Math.ceil(baseWidth)))
+        colBaseWidthRef.current = next
+        table.style.setProperty('--col-base', `${next}px`)
       }
       if (stock) {
         const stockWidth = Math.max(stock.scrollWidth, measureColumn('td.col-stock'))
-        table.style.setProperty('--col-stock', `${Math.max(90, Math.ceil(stockWidth))}px`)
+        const prev = colStockWidthRef.current
+        const next = Math.max(prev, Math.max(90, Math.ceil(stockWidth)))
+        colStockWidthRef.current = next
+        table.style.setProperty('--col-stock', `${next}px`)
       }
     }
     update()

@@ -16,3 +16,7 @@
 ## Cambios Futuros
 - Mantener la lógica actual de sincronización.
 - Cualquier ajuste debe respetar el flujo definido arriba.
+
+## UI - Autoajuste de grillas
+- El autoajuste de columnas en las grillas mantiene el ancho máximo observado.
+- Una vez ajustado, no se reduce automáticamente para evitar saltos visuales.
