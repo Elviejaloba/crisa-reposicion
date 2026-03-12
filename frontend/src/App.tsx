@@ -12,11 +12,6 @@ const defaultApiBase =
     : 'http://127.0.0.1:5003'
 const API_BASE = (import.meta as any).env?.VITE_API_BASE || defaultApiBase
 const LOGO_URL = (import.meta as any).env?.VITE_LOGO_URL || '/logo-crisa.png'
-const APP_VERSION =
-  (import.meta as any).env?.VITE_APP_VERSION ||
-  (import.meta as any).env?.VITE_GIT_SHA ||
-  'dev'
-
 const DEFAULT_FAMILIAS = ['AR', 'BL', 'MC', 'ME', 'MU', 'OT', 'PR', 'PV', 'SI', 'TA']
 const DIAS = [15, 30, 60]
 const ALERTAS = [
