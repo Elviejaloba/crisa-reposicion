@@ -20,3 +20,11 @@
 ## UI - Autoajuste de grillas
 - El autoajuste de columnas en las grillas mantiene el ancho máximo observado.
 - Una vez ajustado, no se reduce automáticamente para evitar saltos visuales.
+
+## Publicación y entornos
+- GitHub: rama principal 'main' es la fuente de verdad.
+- Vercel: publicación desde GitHub si está conectado (auto‑deploy). Si no, usar 'vercel link' y 'vercel --prod'.
+- Render: publicación desde GitHub si está conectado (auto‑deploy). Si no, usar deploy hook.
+- Neon: base de datos en la nube; se actualiza sólo vía sync del py.
+- URLs/servicios: completar y mantener actualizados en este bloque.
+
