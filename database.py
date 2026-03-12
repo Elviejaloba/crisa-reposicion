@@ -1016,6 +1016,7 @@ def get_matriz_distribucion(
     solo_nuevos: bool = False,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    limit: Optional[int] = None,
 ):
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -1174,6 +1175,25 @@ def get_matriz_distribucion(
 
     if solo_nuevos:
         query += " AND is_nuevo = 1"
+
+    safe_limit = 0
+    try:
+        if limit is not None:
+            safe_limit = max(0, min(int(limit), 2000))
+    except Exception:
+        safe_limit = 0
+
+    if safe_limit:
+        query += """
+            AND (cod_base, cod_articulo) IN (
+                SELECT cod_base, cod_articulo
+                FROM calc
+                GROUP BY 1,2
+                ORDER BY SUM(ABS(necesidad)) DESC
+                LIMIT %s
+            )
+        """
+        params.append(safe_limit)
 
     query += " ORDER BY cod_base, cod_articulo, sucursal"
 

@@ -590,6 +590,7 @@ async def get_matriz_distribucion(
         solo_nuevos=bool(solo_nuevos),
         start_date=start_date,
         end_date=end_date,
+        limit=limit,
     )
     if not data:
         return {"columns": [], "rows": [], "source_rows": 0}
