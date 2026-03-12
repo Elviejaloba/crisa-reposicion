@@ -1025,7 +1025,11 @@ def get_matriz_distribucion(
 
     query = """
         WITH ventas_p AS (
-            SELECT cod_articulo, sucursal, SUM(cantidad_venta) AS ventas_periodo
+            SELECT
+                cod_articulo,
+                sucursal,
+                SUM(cantidad_venta) AS ventas_periodo_stock,
+                SUM(COALESCE(NULLIF(cantidad_venta_erp, 0), cantidad_venta)) AS ventas_periodo_erp
             FROM ventas
             WHERE fecha >= %s AND fecha <= %s
             GROUP BY 1,2
@@ -1294,23 +1298,24 @@ def get_sugerencia_distribucion(
                 b.sucursal,
                 b.cod_articulo,
                 COALESCE(s.stock_sucursal, 0) AS stock_sucursal,
-                COALESCE(v.ventas_periodo, 0) AS ventas_periodo,
-                COALESCE(v.ventas_periodo, 0) / %s AS venta_promedio_diaria,
+                COALESCE(v.ventas_periodo_stock, 0) AS ventas_periodo_stock,
+                COALESCE(v.ventas_periodo_erp, 0) AS ventas_periodo_erp,
+                COALESCE(v.ventas_periodo_stock, 0) / %s AS venta_promedio_diaria,
                 CASE
-                    WHEN COALESCE(v.ventas_periodo, 0) = 0 THEN 0
-                    ELSE COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo, 0) / %s) * 30, 0)
+                    WHEN COALESCE(v.ventas_periodo_stock, 0) = 0 THEN 0
+                    ELSE COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo_stock, 0) / %s) * 30, 0)
                 END AS meses_stock,
-                (COALESCE(v.ventas_periodo, 0) - COALESCE(s.stock_sucursal, 0)) AS necesidad,
+                (COALESCE(v.ventas_periodo_stock, 0) - COALESCE(s.stock_sucursal, 0)) AS necesidad,
                 CASE
-                    WHEN COALESCE(v.ventas_periodo, 0) = 0 THEN 'Sin rotaciÃ³n'
-                    WHEN (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo, 0) / %s) * 30, 0)) < 1 THEN 'Quiebre de stock'
-                    WHEN (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo, 0) / %s) * 30, 0)) >= 1
-                         AND (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo, 0) / %s) * 30, 0)) < 2 THEN 'Stock de Seguridad'
-                    WHEN (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo, 0) / %s) * 30, 0)) >= 2
-                         AND (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo, 0) / %s) * 30, 0)) < 3 THEN 'Pto de Pedido'
-                    WHEN (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo, 0) / %s) * 30, 0)) >= 3
-                         AND (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo, 0) / %s) * 30, 0)) < 4 THEN 'OK'
-                    WHEN (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo, 0) / %s) * 30, 0)) >= 4 THEN 'Sobrestock'
+                    WHEN COALESCE(v.ventas_periodo_stock, 0) = 0 THEN 'Sin rotaciÃ³n'
+                    WHEN (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo_stock, 0) / %s) * 30, 0)) < 1 THEN 'Quiebre de stock'
+                    WHEN (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo_stock, 0) / %s) * 30, 0)) >= 1
+                         AND (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo_stock, 0) / %s) * 30, 0)) < 2 THEN 'Stock de Seguridad'
+                    WHEN (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo_stock, 0) / %s) * 30, 0)) >= 2
+                         AND (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo_stock, 0) / %s) * 30, 0)) < 3 THEN 'Pto de Pedido'
+                    WHEN (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo_stock, 0) / %s) * 30, 0)) >= 3
+                         AND (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo_stock, 0) / %s) * 30, 0)) < 4 THEN 'OK'
+                    WHEN (COALESCE(s.stock_sucursal, 0) / NULLIF((COALESCE(v.ventas_periodo_stock, 0) / %s) * 30, 0)) >= 4 THEN 'Sobrestock'
                     ELSE 'OK'
                 END AS alerta_stock,
                 COALESCE(cdd.stock_cdd, 0) AS stock_cdd,
