@@ -30,3 +30,9 @@
 - Vercel (frontend): https://srctextilcrisa.vercel.app
 - Render (API): https://crisa-reposicion.onrender.com/
 
+
+## Servicios locales
+- Reposicion-API: servicio del backend (main.py).
+- Reposicion-Bridge-Sync: servicio del sincronizador (bridge_sql.py).
+- Ambos deben estar en RUNNING para que el sistema funcione.
+
