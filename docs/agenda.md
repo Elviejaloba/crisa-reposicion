@@ -27,4 +27,6 @@
 - Render: publicación desde GitHub si está conectado (auto‑deploy). Si no, usar deploy hook.
 - Neon: base de datos en la nube; se actualiza sólo vía sync del py.
 - URLs/servicios: completar y mantener actualizados en este bloque.
+- Vercel (frontend): https://srctextilcrisa.vercel.app
+- Render (API): https://crisa-reposicion.onrender.com/
 
