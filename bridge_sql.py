@@ -44,20 +44,29 @@ def _pick_driver() -> str:
 _driver = _pick_driver()
 _encrypt = os.environ.get("ODBC_ENCRYPT", "").strip().lower()
 _trust = os.environ.get("ODBC_TRUST_CERT", "").strip().lower()
+# Defaults seguros y compatibles:
+# - Driver 11 / SQL Server legacy NO soportan cifrado
+# - Drivers modernos pueden usar Encrypt=yes con TrustServerCertificate=yes
 if not _encrypt:
-    _encrypt = "yes" if "ODBC Driver 1" in _driver else "no"
+    if "ODBC Driver 11" in _driver or _driver == "SQL Server":
+        _encrypt = "no"
+    else:
+        _encrypt = "yes" if "ODBC Driver 1" in _driver else "no"
 if _encrypt == "yes" and not _trust:
     _trust = "yes"
 
-conn_str = (
-    f"Driver={{{_driver}}};"
-    "Server=tangoserver;"
-    "Database=crisa_real1;"
-    "UID=Axoft;"
-    "PWD=Axoft;"
-    f"Encrypt={_encrypt};"
-    f"TrustServerCertificate={_trust};"
-)
+_conn_parts = [
+    f"Driver={{{_driver}}};",
+    "Server=tangoserver;",
+    "Database=crisa_real1;",
+    "UID=Axoft;",
+    "PWD=Axoft;",
+]
+if _encrypt:
+    _conn_parts.append(f"Encrypt={_encrypt};")
+if _trust and _encrypt == "yes":
+    _conn_parts.append(f"TrustServerCertificate={_trust};")
+conn_str = "".join(_conn_parts)
 
 # ==============================================================
 # URL del API - LOCAL / PRODUCCIÃ“N
@@ -489,10 +498,9 @@ def get_data():
                 SET LOCK_TIMEOUT 30000;
                 SET DEADLOCK_PRIORITY LOW;
                 SELECT
-                CTA03.FECHA_MOV AS [Fecha] ,
+                CTA02.FECHA_EMIS AS [Fecha] ,
                 CTA02.NRO_SUCURS AS [Nro. Sucursal] ,
                 SUCURSAL.DESC_SUCURSAL AS [Desc. sucursal] ,
-                CTA02.T_COMP AS [Tipo de comprobante] ,
                 CTA03.Cod_Articu AS [Cod. Articulo] ,
                 CTA_ARTICULO.DESC_CTA_ARTICULO AS [Descripcion] ,
                 CTA_ARTICULO.SINONIMO AS [Sinonimo] ,
@@ -537,10 +545,9 @@ def get_data():
                 CTA03.Cod_Articu NOT IN ('Art. Ajuste')
                 AND (CTA03.Cod_Articu <> '')
                 AND CTA02.T_COMP <> 'REC'
-                AND (CTA03.FECHA_MOV BETWEEN '{fecha_desde}' AND '{fecha_hasta}')
-                AND ((ISNULL(CTA03.RENGL_PADR,0) = 0) OR (ISNULL(CTA03.INSUMO_KIT_SEPARADO,0) = 1))
+                AND (CTA02.FECHA_EMIS BETWEEN '{fecha_desde}' AND '{fecha_hasta}')
                 GROUP BY
-                CTA03.FECHA_MOV, CTA02.NRO_SUCURS, SUCURSAL.DESC_SUCURSAL, CTA02.T_COMP, CTA03.Cod_Articu, CTA_ARTICULO.DESC_CTA_ARTICULO, CTA_ARTICULO.SINONIMO,
+                CTA02.FECHA_EMIS, CTA02.NRO_SUCURS, SUCURSAL.DESC_SUCURSAL, CTA03.Cod_Articu, CTA_ARTICULO.DESC_CTA_ARTICULO, CTA_ARTICULO.SINONIMO,
                 (CASE CTA_ARTICULO.BASE when '' then CTA_ARTICULO.COD_ARTICULO ELSE CTA_ARTICULO.BASE end),
                 (CASE CTA_ARTICULO.BASE when '' then CTA_ARTICULO.DESC_CTA_ARTICULO ELSE BASE.DESC_CTA_ARTICULO end),
                 ISNULL(FAMILIA_ART.COD_AGR,''), FAMILIA_ART.NOM_AGR, MEDIDA_STOCK.SIGLA_MEDIDA

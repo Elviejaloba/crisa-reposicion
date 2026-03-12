@@ -1061,6 +1061,8 @@ async def get_sync_info():
     # Convertir fechas a string para JSON
     if info.get("ultima_fecha_ventas"):
         info["ultima_fecha_ventas"] = str(info["ultima_fecha_ventas"])
+    if info.get("ultima_sync_ventas"):
+        info["ultima_sync_ventas"] = str(info["ultima_sync_ventas"])
     if info.get("ultima_sync_saldo"):
         info["ultima_sync_saldo"] = str(info["ultima_sync_saldo"])
     if info.get("ultima_sync_saldo_historial"):

@@ -746,6 +746,7 @@ def get_sync_info():
             (SELECT COUNT(*) FROM articulos) as total_articulos,
             (SELECT COUNT(*) FROM categorias) as total_categorias,
             (SELECT MAX(fecha) FROM ventas) as ultima_fecha_ventas,
+            (SELECT MAX(sync_timestamp) FROM ventas) as ultima_sync_ventas,
             (SELECT MAX(sync_timestamp) FROM saldo) as ultima_sync_saldo,
             (SELECT MAX(snapshot_ts) FROM saldo_historial) as ultima_sync_saldo_historial,
             (SELECT MAX(sync_timestamp) FROM precios) as ultima_sync_precios,
